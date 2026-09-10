@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_bus_line_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🚌 Harput Hattı"
+                android:textColor="#0D1C2E"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_bus_stop_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Öğretmenevi Durağı"
+                android:textColor="#43474E"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_live_tag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🟢 CANLI VARIS"
+            android:textColor="#0061A5"
+            android:textSize="9sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:id="@+id/tv_bus_eta"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="4 dk"
+            android:textColor="#002045"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="end">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sonraki Araç"
+                android:textColor="#43474E"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/tv_bus_next_eta"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="14 Dakika"
+                android:textColor="#0D1C2E"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:background="@drawable/widget_progress_bg"
+        android:layout_marginTop="6dp" />
+
+</LinearLayout>

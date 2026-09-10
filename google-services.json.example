@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "416351420581",
+    "project_id": "elazigapp",
+    "storage_bucket": "elazigapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:416351420581:android:0b6d87084baf8d19c68d4c",
+        "android_client_info": {
+          "package_name": "com.crowroser.elazigsehir"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "REDACTED_CLIENT_ID",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.crowroser.elazigsehir",
+            "certificate_hash": "ba7be793b8aa08c86f7275be046ccc7215028ddb"
+          }
+        },
+        {
+          "client_id": "REDACTED_CLIENT_ID",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.crowroser.elazigsehir",
+            "certificate_hash": "a7976836100b525fb5b806ceb553c22e02add2d9"
+          }
+        },
+        {
+          "client_id": "REDACTED_CLIENT_ID",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "REDACTED_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "REDACTED_CLIENT_ID",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

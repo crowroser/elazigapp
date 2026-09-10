@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Her kullanıcı yalnızca kendi profil belgesini okuyup yazabilir
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Kampüs ilan panosu: herkes okur, giriş yapmış kullanıcı ilan verir,
+    // yalnızca ilan sahibi (ownerId) günceller/siler
+    match /classifieds/{postId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
