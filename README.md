@@ -1,110 +1,114 @@
-# 🚀 Elazığ Şehir Asistanı Mobil Uygulaması (Expo React Native - Android & iOS)
+# Elazığ Şehir
 
-Elazığ Şehir Mobil Uygulaması, `bot_code` içerisindeki Telegram/N8N bot servislerinin iş mantığını ve `tasarım` klasöründeki modern UI/UX tasarım sistemlerini birleştirerek Expo React Native altyapısıyla geliştirilmiştir.
+Elazığ için tek uygulamada canlı şehir hizmetleri: otobüs takibi ve ElazığKart, Fırat Üniversitesi OBS, etkinlikler, haberler, nöbetçi eczaneler ve kesintiler. Expo (React Native) ile geliştirilmiştir; Android APK olarak EAS üzerinden derlenir.
 
----
+Uygulama **hiçbir örnek/sahte veri göstermez** — her ekran ilgili kaynaktan anlık veri çeker. Bağımsız bir geliştirici projesidir; Elazığ Belediyesi, Fırat Üniversitesi veya Bubilet'in resmî uygulaması değildir.
 
-## 📱 Uygulama Ekranları ve Özellikleri
+## Özellikler
 
-### 1. 🏠 Ana Sayfa (Dashboard)
-- **Hoş Geldiniz & Canlı Hava Durumu**: WeatherAPI entegrasyonu ile Elazığ anlık sıcaklık, durum (Güneşli, Bulutlu vb.), nem ve rüzgar bilgisi.
-- **ElazığKart Bakiye Kartı**: Güncel bakiye, kart tipi, NFC görseli ve "Kart Sorgula" butonu.
-- **Canlı Ezan Vakti Geri Sayım Widget'ı**: Bir sonraki vakte kalan sürenin canlı geri sayımı ve günlük 6 vakitlik zaman şeridi.
-- **Şehir Hizmetleri Bento Grid**: Ulaşım, Yemekhane, Eczane, Haberler, Namaz Vakitleri ve Akademik Flow için hızlı erişim kartları.
-- **Keşfet & Canlı Harita Banner'ı**: Şehir canlı trafik durumu rozeti ve harita keşif yönlendirmesi.
+### Ulaşım (ElazığKart)
+- Şehirdeki tüm duraklar ve 49 hat, harita üzerinde (Leaflet / WebView)
+- Seçilen durağa yaklaşan otobüsler: kalan dakika, kaç durak uzakta, plaka, hat istikameti
+- Hat seçince gidiş/dönüş güzergahı, duraklar, günün sefer saatleri ve ücret tarifesi
+- Haritada boş bir yere dokununca **şehir geneli canlı mod**: tüm otobüsler 5 sn'de bir güncellenir
+- ElazığKart bakiye sorgulama (NFC ile kart okutma veya seri numarası), bekleyen yükleme ve geçerlilik tarihi
+- Kart yükleme noktaları / bayiler (konuma göre en yakınlar, yol tarifi)
 
----
+### Fırat Üniversitesi OBS
+- CAS girişi (SSO oturumu tanınır); şifre yalnızca cihazda, şifreli depoda tutulur
+- Profil, AGNO, dönem/sınıf, öğrenim durumu, danışman
+- Not listesi (vize/final/büt detayları) ve **sınav istatistikleri** (harf dağılımı, sınıf ortalaması, standart sapma, katılım)
+- Ders programı (güne göre), alınan dersler, devamsızlık, sınav takvimi, tüm dönemlerin ders geçmişi
 
-### 2. 🚌 Canlı Ulaşım & ElazığKart (`/transit`)
-- **Canlı Otobüs Durakları**: `elazigkart.elazig.bel.tr` servisinden çekilen aktif duraklar, durak kodları, geçen hatlar ve otobüs varış süreleri.
-- **Hat Detayları (Hat 23 Harput, Hat 1 Kampüs, Hat 5 Çayda Çıra)**: Güzergah durak sırası (Timeline), ilk ve son durak bilgileri ile hafta içi kalkış saatleri.
-- **Gerçek Zamanlı ElazığKart Bakiye Sorgulama**:
-  - `POST https://elazigkart.elazig.bel.tr/api/card/usercardinfocore` API entegrasyonu.
-  - Kart sahibinin adı-soyadı, kart tipi (İndirimli Öğrenci / Sivil), güncel TL bakiyesi, kart durumu ve son otobüs biniş işlem tarihi gösterimi.
+### Keşfet
+- **Etkinlikler** (Bubilet): kategoriler, seanslar, kalan bilet sayısı, indirimler ve Süper Bilet fırsatları
+- **Haberler**: Elazığ Son Haber RSS, kategori filtresi, paylaşım
 
----
+### Hizmetler
+- Nöbetçi eczaneler (ara / yol tarifi), Fırat EDAŞ planlı kesintiler, önemli numaralar, namaz vakitleri
 
-### 3. 🎓 Fırat Üniversitesi Portal (`/university`)
-- **Günün Yemekhane Menüsü**:
-  - `https://unievi.firat.edu.tr/` canlı yemekhane verisi.
-  - **Öğle / Akşam** menü geçişi (Çorba, Ana Yemek, Pilav/Makarna, Tatlı/Meyve).
-  - Kalori (kcal) etiketleri, Öğrenci (25.00 ₺) ve Personel (65.00 ₺) indirimli fiyat bilgilendirme panosu.
-- **Akademik Duyuru Akışı**:
-  - 33 Fakülte ve Yüksekokul duyurularını tarayan dinamik akış.
-  - Fakülteye göre filtreleme çipleri (`Mühendislik`, `Teknoloji`, `Tıp`, `İİBF` vb.).
-- **Akademik Takvim Etkinlikleri**: Vize/Final sınav haftaları ve üniversite sempozyum takvimi.
+### Diğer
+- Ana sayfa: kayıtlı kartın bakiyesi, hava durumu, namaz vakti, hızlı erişim
+- Kampüs ilan panosu (Firebase Firestore), Gakgoş asistan (canlı verilerle kural tabanlı), uyarı ayarları, Android widget önizlemesi
 
----
+## Veri kaynakları
 
-### 4. 📰 Elazığ Haber Merkezi (`/news`)
-- **Son Dakika Haber Feed'i**: `elazigsonhaber.com` RSS Feed servisinden canlı şehir haberleri.
-- **Kategori Filtreleme**: Şehir, Eğitim, Kültür, Spor kategorileri.
-- **Haber Detay & Paylaşım**: Detaylı oku ekranı ve cihaz içi haber paylaşma (`Share.share`) aksiyonu.
+| Alan | Kaynak |
+|---|---|
+| Ulaşım, bakiye, bayiler | `elazigkart.elazig.bel.tr` (Elazığ Belediyesi) |
+| OBS | `obs.firat.edu.tr` / `jasig.firat.edu.tr` (CAS) |
+| Yemekhane, duyurular | `unievi.firat.edu.tr`, `firat.edu.tr` ve birim siteleri |
+| Etkinlikler | `bubilet.com.tr` / `platform.api.bubilet.com.tr` |
+| Haberler | `elazigsonhaber.com` RSS |
+| Eczaneler | `elazig.bel.tr` |
+| Kesintiler | `firatedas.com.tr` |
+| Namaz vakitleri | Aladhan API |
+| Hava durumu | WeatherAPI |
 
----
+## Kurulum
 
-### 5. 🏥 Kent Rehberi & Nöbetçi Eczaneler (`/services`)
-- **Elazığ Nöbetçi Eczaneler**:
-  - `elazig.bel.tr` nöbetçi eczaneler canlı listesi.
-  - Tek tıkla telefon araması (`tel:0424...`), açık adres, nöbet saatleri ve Google Maps yol tarifi.
-- **Elektrik & Su Kesintileri**: Aksa Elektrik ve Elazığ Belediyesi planlı kesinti saatleri ve etkilenecek mahalleler.
-- **Önemli Telefon Rehberi**: Belediye Çağrı Merkezi (153), Acil Çağrı (112), Aksa Elektrik (186), Su Arıza (185) ve Hastane santral numaraları.
+```bash
+npm install
+cp .env.example .env        # değerleri doldurun
+cp google-services.json.example google-services.json   # Firebase konsolundan indirdiğiniz dosya ile değiştirin
+npm start                   # Expo dev server
+npm run android             # bağlı cihaz/emülatörde çalıştır
+```
 
----
+`.env` içindeki değişkenler (`EXPO_PUBLIC_*`) derleme sırasında pakete gömülür:
 
-## 🛠️ Proje Yapısı
+| Değişken | Açıklama |
+|---|---|
+| `EXPO_PUBLIC_FIREBASE_*` | Firebase web yapılandırması (Auth + Firestore) |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | Google ile giriş |
+| `EXPO_PUBLIC_WEATHER_API_KEY` | weatherapi.com anahtarı |
+
+> `.env`, `google-services.json` ve keystore dosyaları git'e dahil edilmez. Gizli bilgi içeren hiçbir dosya depoya eklenmemelidir.
+
+### Firestore kuralları
+
+Kullanıcı profilleri ve ilan panosu için kurallar `firestore.rules` dosyasındadır:
+
+```bash
+firebase deploy --only firestore:rules --project <proje-id>
+```
+
+### EAS ile derleme
+
+Gizli değerler EAS ortam değişkenlerinde tutulur (`eas env:create`); `app.config.js`, `GOOGLE_SERVICES_JSON` değişkeninden `google-services.json` dosyasını üretir.
+
+```bash
+eas build -p android --profile production   # APK
+```
+
+## Proje yapısı
 
 ```text
-elazıgapp/
-├── app/
-│   ├── (tabs)/
-│   │   ├── _layout.tsx      # Tab bar yapılandırması & ikonlar
-│   │   ├── index.tsx        # Ana Sayfa / Dashboard
-│   │   ├── transit.tsx      # Ulaşım & ElazığKart
-│   │   ├── university.tsx   # Yemekhane & Üniversite
-│   │   ├── news.tsx         # Haberler & Duyurular
-│   │   └── services.tsx     # Eczane, Kesintiler & Rehber
-│   └── _layout.tsx          # Kök Stack Navigation
-├── components/
-│   ├── Header.tsx           # Üst bar & Logo
-│   ├── ElazigKartCard.tsx   # ElazığKart widget'ı
-│   ├── CardQueryModal.tsx   # Canlı bakiye sorgulama modalı
-│   ├── WeatherWidget.tsx    # Hava durumu kartı
-│   ├── PrayerCard.tsx       # Namaz vakitleri geri sayım kartı
-│   └── BentoGrid.tsx        # Şehir hizmetleri bento ızgarası
-├── services/
-│   └── apiService.ts        # Tüm API, scraping ve mock veri servisleri
-├── constants/
-│   └── Theme.ts             # Elazığ Kent renk paleti & UI tokenları
-├── bot_code/                # Bot kaynak kodları (N8N JSON)
-├── tasarım/                 # HTML/CSS Mobil Arayüz Tasarımları
-├── package.json
-└── app.json
+app/
+  (tabs)/           # index (ana sayfa), transit, university, news (Keşfet), services
+  obs.tsx           # OBS ekranı
+  classifieds.tsx   # İlan panosu
+  assistant.tsx     # Gakgoş asistan
+  notifications.tsx # Uyarı ayarları
+  widgets.tsx       # Widget önizleme
+components/
+  ui.tsx            # Tasarım sistemi bileşenleri (Card, Chip, Pill, StatTile, ...)
+  ...               # Kart, hava, namaz, modal bileşenleri
+services/
+  apiService.ts     # ElazığKart, eczane, kesinti, haber, duyuru, yemekhane, namaz, hava
+  obsService.ts     # Fırat OBS (CAS girişi, sayfa ayrıştırma)
+  eventsService.ts  # Bubilet etkinlikleri
+  authService.ts    # Firebase Auth + Firestore profil
+  prefsService.ts   # Cihaz-yerel tercihler
+constants/Theme.ts  # Renk, boşluk, tipografi tokenları
+firestore.rules     # Firestore güvenlik kuralları
 ```
 
----
+## Notlar
 
-## 💻 Çalıştırma Talimatları
+- Belediye ve OBS servisleri zaman zaman değişmekte veya aralıklı 5xx dönmektedir; servis katmanı yeniden deneme ve önbellek kullanır.
+- Uygulama Türkçe arayüze sahiptir ve Android'e odaklanır (iOS derlemesi test edilmemiştir).
 
-Proje dizininde terminal üzerinden aşağıdaki komutları kullanabilirsiniz:
+## Lisans
 
-### 1. Geliştirici Sunucusunu Başlatma (Expo Dev Server)
-```bash
-npm start
-```
-*QR kodunu telefonunuzdaki **Expo Go** uygulamasından okutarak Android veya iOS cihazınızda canlı olarak test edebilirsiniz.*
-
-### 2. Android Emülatörde Çalıştırma
-```bash
-npm run android
-```
-
-### 3. iOS Simülatörde Çalıştırma (macOS)
-```bash
-npm run ios
-```
-
-### 4. Web Üzerinde Test Etme
-```bash
-npm run web
-```
+[MIT](LICENSE)
