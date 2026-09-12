@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Theme } from '../constants/Theme';
+import { Theme, themedStyles } from '../constants/Theme';
 import { WeatherData } from '../services/apiService';
 
 const C = Theme.colors;
@@ -39,7 +39,7 @@ export const WeatherWidget: React.FC<{ weather: WeatherData | null; compact?: bo
   );
 };
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   box: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -57,4 +57,4 @@ const styles = StyleSheet.create({
   cond: { fontSize: 12, color: C.textMuted, fontWeight: '600' },
   meta: { alignItems: 'flex-end', gap: 2 },
   metaText: { fontSize: 11, color: C.textSecondary, fontWeight: '600' },
-});
+}));

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity, Share, Linking, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Theme } from '../constants/Theme';
+import { Theme, themedStyles } from '../constants/Theme';
 import { AnnouncementDetailData } from '../services/apiService';
 import { Card, LoadingState, Pill, PrimaryButton, ScreenHeader } from './ui';
 
@@ -96,7 +96,7 @@ export const AnnouncementDetailModal: React.FC<Props> = ({ visible, onClose, det
   );
 };
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
   top: { backgroundColor: RED },
   shareBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
@@ -110,4 +110,4 @@ const styles = StyleSheet.create({
   att: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
   attBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.cardBorder },
   attName: { ...Theme.text.body, color: C.textPrimary, fontWeight: '600' },
-});
+}));

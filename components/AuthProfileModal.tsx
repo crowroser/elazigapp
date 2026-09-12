@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { User } from 'firebase/auth';
-import { Theme } from '../constants/Theme';
+import { Theme, themedStyles } from '../constants/Theme';
 import { AuthService, UserProfile, describeFirestoreError } from '../services/authService';
 import { ObsService } from '../services/obsService';
 import { PrefsService } from '../services/prefsService';
@@ -253,7 +253,7 @@ export const AuthProfileModal: React.FC<AuthProfileModalProps> = ({ visible, onC
   );
 };
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
   content: { padding: Theme.spacing.lg, gap: Theme.spacing.md },
   rowHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -267,4 +267,4 @@ const styles = StyleSheet.create({
   name: { ...Theme.text.h2, color: C.textPrimary, marginTop: 6 },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   switch: { ...Theme.text.small, color: C.primaryLight, fontWeight: '700', textAlign: 'center' },
-});
+}));

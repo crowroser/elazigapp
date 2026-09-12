@@ -2,7 +2,16 @@
  * Elazığ Şehir — tasarım sistemi
  * Lacivert (şehir) + amber vurgu + Fırat kırmızısı (üniversite).
  * Eski token adları geriye dönük uyumluluk için korunur.
+ *
+ * Tema: `Theme.colors` CANLI bir nesnedir — tema değişince alanları yerinde güncellenir, böylece
+ * modül başında `const C = Theme.colors` alan tüm dosyalar render anında güncel rengi okur.
+ * Modül düzeyindeki `StyleSheet.create` sonuçları ise `themedStyles(() => …)` ile sarılır:
+ * stil nesnesi ilk erişimde kurulur, tema değişince bir sonraki erişimde yeniden kurulur.
  */
+import { useSyncExternalStore } from 'react';
+import { Appearance, StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 const palette = {
   navy900: '#0A1B33',
   navy800: '#0F2A4A',
@@ -39,61 +48,145 @@ const palette = {
   white: '#FFFFFF',
 };
 
+const lightColors = {
+  // Tema bilgisi
+  isDark: false,
+  statusBar: 'dark-content' as 'dark-content' | 'light-content',
+
+  // Marka
+  primary: palette.navy800,
+  primaryDark: palette.navy900,
+  primaryLight: palette.navy600,
+  primaryContainer: palette.navy700,
+  onPrimaryContainer: palette.navy100,
+  accent: palette.amber500,
+  accentDark: palette.amber600,
+  accentBg: palette.amber100,
+  secondary: palette.navy600,
+  secondaryLight: '#66AFFE',
+  secondaryBg: palette.navy100,
+
+  // Yüzeyler
+  background: '#F3F5F9',
+  surface: palette.white,
+  surfaceSubtle: palette.slate50,
+  surfaceVariant: palette.navy50,
+  cardBorder: palette.slate200,
+  divider: palette.slate100,
+
+  // Metin
+  textPrimary: palette.slate900,
+  textSecondary: palette.slate700,
+  textMuted: palette.slate500,
+  textFaint: palette.slate400,
+  textWhite: palette.white,
+
+  // Durum
+  success: palette.green600,
+  successBg: palette.green100,
+  successGreen: palette.green600,
+  warning: palette.amber600,
+  warningBg: palette.amber100,
+  warningOrange: palette.amber600,
+  danger: palette.red600,
+  dangerBg: palette.red100,
+  pharmacyRed: palette.red600,
+  pharmacyBg: palette.red100,
+  info: palette.teal600,
+  infoBg: palette.teal100,
+  transitBlue: palette.navy600,
+  prayerGold: palette.gold600,
+  prayerBg: palette.gold100,
+
+  // Üniversite (Fırat)
+  uniRed: palette.red700,
+  uniRedDark: '#7A1524',
+  uniRedSoft: '#FCE8EB',
+  uniRedWash: palette.red50,
+  uniBorder: '#F0D4D8',
+  uniMuted: '#6B4A52',
+};
+
+export type ThemeColors = typeof lightColors;
+
+/** Koyu tema: aynı token adları, gece için ayarlanmış kontrast */
+const darkColors: ThemeColors = {
+  isDark: true,
+  statusBar: 'light-content',
+
+  primary: '#2F62A8',
+  primaryDark: '#163A66',
+  primaryLight: '#4A7FC4',
+  primaryContainer: '#1F4E86',
+  onPrimaryContainer: '#DCE6F5',
+  accent: '#F59E0B',
+  accentDark: '#FB923C',
+  accentBg: '#3B2A14',
+  secondary: '#66AFFE',
+  secondaryLight: '#93C5FD',
+  secondaryBg: '#1A2E4D',
+
+  background: '#0B1220',
+  surface: '#121B2E',
+  surfaceSubtle: '#182238',
+  surfaceVariant: '#1B2A47',
+  cardBorder: '#26344F',
+  divider: '#1E2B44',
+
+  textPrimary: '#F1F5F9',
+  textSecondary: '#CBD5E1',
+  textMuted: '#94A3B8',
+  textFaint: '#64748B',
+  textWhite: '#FFFFFF',
+
+  success: '#4ADE80',
+  successBg: '#14331F',
+  successGreen: '#4ADE80',
+  warning: '#FB923C',
+  warningBg: '#3B2A14',
+  warningOrange: '#FB923C',
+  danger: '#F87171',
+  dangerBg: '#3B1A1A',
+  pharmacyRed: '#F87171',
+  pharmacyBg: '#3B1A1A',
+  info: '#2DD4BF',
+  infoBg: '#123B37',
+  transitBlue: '#66AFFE',
+  prayerGold: '#FBBF24',
+  prayerBg: '#3B3013',
+
+  uniRed: '#C9455A',
+  uniRedDark: '#9B1B2E',
+  uniRedSoft: '#3A1A20',
+  uniRedWash: '#2A1418',
+  uniBorder: '#4A2530',
+  uniMuted: '#C9A0A8',
+};
+
+export type ThemePreference = 'system' | 'light' | 'dark';
+const THEME_PREF_KEY = '@prefs/theme_preference';
+
+// Canlı renk nesnesi (kimliği hiç değişmez; alanları yerinde güncellenir)
+const liveColors: ThemeColors = { ...lightColors };
+let preference: ThemePreference = 'system';
+let version = 0;
+const listeners = new Set<() => void>();
+
+function resolveScheme(pref: ThemePreference): 'light' | 'dark' {
+  if (pref === 'system') return Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
+  return pref;
+}
+
+function applyScheme(scheme: 'light' | 'dark') {
+  const next = scheme === 'dark' ? darkColors : lightColors;
+  if (liveColors.isDark === next.isDark && version > 0) return;
+  Object.assign(liveColors, next);
+  version++;
+  listeners.forEach((l) => l());
+}
+
 export const Theme = {
-  colors: {
-    // Marka
-    primary: palette.navy800,
-    primaryDark: palette.navy900,
-    primaryLight: palette.navy600,
-    primaryContainer: palette.navy700,
-    onPrimaryContainer: palette.navy100,
-    accent: palette.amber500,
-    accentDark: palette.amber600,
-    accentBg: palette.amber100,
-    secondary: palette.navy600,
-    secondaryLight: '#66AFFE',
-    secondaryBg: palette.navy100,
-
-    // Yüzeyler
-    background: '#F3F5F9',
-    surface: palette.white,
-    surfaceSubtle: palette.slate50,
-    surfaceVariant: palette.navy50,
-    cardBorder: palette.slate200,
-    divider: palette.slate100,
-
-    // Metin
-    textPrimary: palette.slate900,
-    textSecondary: palette.slate700,
-    textMuted: palette.slate500,
-    textFaint: palette.slate400,
-    textWhite: palette.white,
-
-    // Durum
-    success: palette.green600,
-    successBg: palette.green100,
-    successGreen: palette.green600,
-    warning: palette.amber600,
-    warningBg: palette.amber100,
-    warningOrange: palette.amber600,
-    danger: palette.red600,
-    dangerBg: palette.red100,
-    pharmacyRed: palette.red600,
-    pharmacyBg: palette.red100,
-    info: palette.teal600,
-    infoBg: palette.teal100,
-    transitBlue: palette.navy600,
-    prayerGold: palette.gold600,
-    prayerBg: palette.gold100,
-
-    // Üniversite (Fırat)
-    uniRed: palette.red700,
-    uniRedDark: '#7A1524',
-    uniRedSoft: '#FCE8EB',
-    uniRedWash: palette.red50,
-    uniBorder: '#F0D4D8',
-    uniMuted: '#6B4A52',
-  },
+  colors: liveColors,
   spacing: {
     xs: 4,
     sm: 8,
@@ -143,4 +236,72 @@ export const Theme = {
   },
 };
 
-export type ThemeColors = typeof Theme.colors;
+/** Tema tercihi (sistem / açık / koyu). Değişiklik anında uygulanır ve kalıcı olarak saklanır. */
+export const ThemeService = {
+  getPreference: (): ThemePreference => preference,
+  isDark: (): boolean => liveColors.isDark,
+
+  async setPreference(pref: ThemePreference): Promise<void> {
+    preference = pref;
+    applyScheme(resolveScheme(pref));
+    try {
+      await AsyncStorage.setItem(THEME_PREF_KEY, pref);
+    } catch {
+      // kalıcı kayıt başarısız olsa da oturum boyunca uygulanır
+    }
+  },
+
+  /** Uygulama açılışında bir kez: kayıtlı tercihi yükler, sistem temasını dinler */
+  async init(): Promise<void> {
+    try {
+      const saved = (await AsyncStorage.getItem(THEME_PREF_KEY)) as ThemePreference | null;
+      if (saved === 'light' || saved === 'dark' || saved === 'system') preference = saved;
+    } catch {
+      // varsayılan: sistem
+    }
+    applyScheme(resolveScheme(preference));
+    Appearance.addChangeListener(() => {
+      if (preference === 'system') applyScheme(resolveScheme('system'));
+    });
+  },
+};
+
+const subscribe = (cb: () => void) => {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+};
+const getVersion = () => version;
+
+/**
+ * Ekran bileşenlerinde çağrılır: tema değişince bileşeni yeniden render eder.
+ * Renkler `Theme.colors` üzerinden okunur (canlı nesne), dönüş değeri de aynı nesnedir.
+ */
+export function useAppTheme(): ThemeColors {
+  useSyncExternalStore(subscribe, getVersion, getVersion);
+  return liveColors;
+}
+
+/**
+ * Modül düzeyindeki stil tablolarını temaya duyarlı yapar:
+ * `const styles = themedStyles(() => StyleSheet.create({ box: { backgroundColor: C.surface } }))`
+ * Stil ilk erişimde oluşturulur; tema değiştiğinde ilk erişimde yeniden oluşturulur.
+ */
+export function themedStyles<T extends StyleSheet.NamedStyles<T>>(factory: () => T): T {
+  let built: T | null = null;
+  let builtVersion = -1;
+  const ensure = () => {
+    if (!built || builtVersion !== version) {
+      built = factory();
+      builtVersion = version;
+    }
+    return built;
+  };
+  return new Proxy({} as T, {
+    get: (_t, key) => (ensure() as any)[key],
+    has: (_t, key) => key in (ensure() as any),
+    ownKeys: () => Reflect.ownKeys(ensure() as any),
+    getOwnPropertyDescriptor: (_t, key) => Object.getOwnPropertyDescriptor(ensure(), key),
+  });
+}

@@ -13,6 +13,7 @@ const SITE = 'https://www.bubilet.com.tr';
 const API = 'https://platform.api.bubilet.com.tr';
 const CDN = 'https://cdn.bubilet.com.tr';
 const UA = 'ElazigSehir/1.0 (Android; +https://elazigkart.elazig.bel.tr)';
+import { cached, CACHE_TTL, CachedResult } from './cacheService';
 
 export type EventTag = 'tumu' | 'konser' | 'tiyatro' | 'stand-up' | 'festival' | 'cocuk-aktiviteleri' | 'eglence';
 export const EVENT_TAGS: { id: EventTag; label: string; icon: string }[] = [
@@ -127,15 +128,23 @@ function parseCards(html: string, tag: EventTag): CityEvent[] {
 }
 
 export const EventsService = {
-  /** Şehir / etiket sayfasındaki etkinlikler (5 dk önbellek) */
+  /** Şehir / etiket sayfasındaki etkinlikler (5 dk çevrimdışı önbellek) */
   async getEvents(tag: EventTag = 'tumu', force = false): Promise<CityEvent[]> {
-    const cached = listCache.get(tag);
-    if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.items;
-    const url = tag === 'tumu' ? `${SITE}/${CITY_SLUG}` : `${SITE}/${CITY_SLUG}/etiket/${tag}`;
-    const html = await fetchText(url);
-    const items = parseCards(html, tag);
-    listCache.set(tag, { at: Date.now(), items });
-    return items;
+    const res = await this.getEventsWithCache(tag, force);
+    return res.data;
+  },
+
+  async getEventsWithCache(tag: EventTag = 'tumu', force = false): Promise<CachedResult<CityEvent[]>> {
+    return cached(
+      `events_${tag}`,
+      CACHE_TTL.EVENTS,
+      async () => {
+        const url = tag === 'tumu' ? `${SITE}/${CITY_SLUG}` : `${SITE}/${CITY_SLUG}/etiket/${tag}`;
+        const html = await fetchText(url);
+        return parseCards(html, tag);
+      },
+      { force }
+    );
   },
 
   /** Etkinlik sayfasından eventId, ardından seans/bilet API'si */

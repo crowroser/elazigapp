@@ -3,7 +3,7 @@ import { Tabs } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Theme } from '../../constants/Theme';
+import { Theme, themedStyles, useAppTheme } from '../../constants/Theme';
 
 const C = Theme.colors;
 
@@ -12,6 +12,7 @@ function TabIcon({ focused, color, children }: { focused: boolean; color: string
 }
 
 export default function TabLayout() {
+  useAppTheme();
   const insets = useSafeAreaInsets();
   const bottom = insets.bottom > 0 ? insets.bottom : 10;
 
@@ -94,7 +95,7 @@ export default function TabLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   iconWrap: { width: 46, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   iconWrapActive: { backgroundColor: C.surfaceVariant },
-});
+}));

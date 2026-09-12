@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { GradeSnapshot, GradeChange, GradeCourseSnapshot } from './prefsService';
 
 /**
  * Fırat Üniversitesi OBS (obs.firat.edu.tr / Proliz OİBS) servisi.
@@ -220,6 +221,97 @@ export interface ObsDashboard {
   advisor: ObsAdvisor | null;
 }
 
+// ─── F9: Harç Bilgileri ──────────────────────────────────────────────────────
+
+export interface ObsTuitionItem {
+  date: string;
+  amount: string;
+  description: string;
+  /** Dönem adı (ör. "2026-2027 Güz Yarıyılı") */
+  bank: string;
+  kind: 'payment' | 'accrual' | 'other';
+  refund: string;
+  dueDate: string;
+}
+
+export interface ObsTuitionResult {
+  accrued: string;
+  paid: string;
+  balance: string;
+  hasDebt: boolean;
+  debtNotice?: string;
+  items: ObsTuitionItem[];
+  semesters: ObsSemester[];
+  currentSemester: string;
+}
+
+// ─── F9: Akademik Takvim ─────────────────────────────────────────────────────
+
+export interface ObsCalendarItem {
+  title: string;
+  startDate: string;
+  endDate: string;
+  rawDate: string;
+  isPast: boolean;
+  isCurrent: boolean;
+}
+
+export interface ObsAcademicCalendarResult {
+  title: string;
+  items: ObsCalendarItem[];
+}
+
+// ─── F9: Müfredat Durum ──────────────────────────────────────────────────────
+
+export interface ObsCurriculumCourse {
+  code: string;
+  name: string;
+  credit: number;
+  akts: number;
+  isCompulsory: boolean;
+  status: 'passed' | 'failed' | 'current' | 'not_taken';
+  letterGrade?: string;
+}
+
+export interface ObsCurriculumSemester {
+  semesterNumber: number;
+  title: string;
+  courses: ObsCurriculumCourse[];
+  totalAkts: number;
+  completedAkts: number;
+}
+
+export interface ObsCurriculumResult {
+  semesters: ObsCurriculumSemester[];
+  totalRequiredAkts: number;
+  totalCompletedAkts: number;
+  completionPercentage: number;
+}
+
+// ─── F10: Gelen Mesajlar ─────────────────────────────────────────────────────
+
+export interface ObsMessage {
+  id: string;
+  sender: string;
+  subject: string;
+  date: string;
+  isRead: boolean;
+  selectTarget?: string;
+}
+
+export interface ObsMessagesResult {
+  messages: ObsMessage[];
+  unreadCount: number;
+}
+
+export interface ObsMessageDetail {
+  id: string;
+  sender: string;
+  subject: string;
+  date: string;
+  body: string;
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const OBS_ORIGIN = 'https://obs.firat.edu.tr';
@@ -234,11 +326,15 @@ const PAGE = {
   ozluk: 100,
   danisman: 102,
   alinanDersler: 103,
+  harc: 110, // ogrenci_harc_bilgileri_devlet.aspx (doğrulandı)
   sinavTakvimi: 105,
+  akademikTakvim: 0, // caller numarası bilinmiyor; menü (gkm) bağlantısı kullanılır
   notListesi: 107,
   dersProgrami: 108,
   transkriptPdf: 109,
+  mufredatDurum: 0, // caller numarası bilinmiyor; menü (gkm) bağlantısı kullanılır
   genelBilgiler: 111,
+  gelenMesajlar: 0, // caller numarası bilinmiyor; menü (gkm) bağlantısı kullanılır
   devamsizlik: 205,
 } as const;
 
@@ -449,18 +545,39 @@ async function followAutoPostForm(page: PageResponse): Promise<PageResponse> {
   return { status: resp.status, url: (resp as any).url || action, html: await resp.text() };
 }
 
+/** OBS'ye giriş (CAS). Aynı anda birden fazla çağrı tek girişe indirgenir. (kuyruk dışı iç sürüm) */
+function loginRaw(studentNo: string, password: string): Promise<boolean> {
+  if (loginPromise) return loginPromise;
+  loginPromise = casLogin(studentNo, password).finally(() => {
+    loginPromise = null;
+  });
+  return loginPromise;
+}
+
+/** Kayıtlı kimlikle giriş (kuyruk dışı iç sürüm; sayfa akışlarının içinden çağrılır) */
+async function autoLoginRaw(): Promise<boolean> {
+  const creds = await ObsService.getCredentials();
+  if (!creds) return false;
+  try {
+    return await loginRaw(creds.studentNo, creds.password);
+  } catch {
+    return false;
+  }
+}
+
 /** caller.aspx?curPage=N üzerinden bir OBS sayfasını açar (oturum düşmüşse yeniden giriş dener) */
 async function openPage(menuTitle: string, curPage: number, retry = true): Promise<PageResponse> {
   if (!isSessionValid) {
-    const ok = await ObsService.autoLogin();
+    const ok = await autoLoginRaw();
     if (!ok) throw new Error('OBS oturumu başlatılamadı. Lütfen tekrar giriş yapın.');
   }
-  const url = menuUrls[menuTitle] || `${OBS_STD}/caller.aspx?curPage=${curPage}`;
+  const url = menuUrls[menuTitle] || (curPage > 0 ? `${OBS_STD}/caller.aspx?curPage=${curPage}` : '');
+  if (!url) throw new Error(`OBS menüsünde "${menuTitle}" bağlantısı bulunamadı.`);
   const page = await fetchPage(url, INDEX_REFERER);
   if (isCasLoginPage(page.html) || (!isObsAuthenticatedPage(page.html) && page.html.length < 3000)) {
     isSessionValid = false;
     if (retry) {
-      const ok = await ObsService.autoLogin();
+      const ok = await autoLoginRaw();
       if (ok) return openPage(menuTitle, curPage, false);
     }
     throw new Error('OBS oturumu sona erdi. Lütfen tekrar giriş yapın.');
@@ -980,6 +1097,298 @@ function parseAdvisor(html: string): ObsAdvisor | null {
   };
 }
 
+// ─── F8: Grade change detection ─────────────────────────────────────────────
+
+export function diffGrades(
+  prev: GradeSnapshot | null | undefined,
+  currentGrades: ObsGrade[],
+  semesterCode: string
+): { changes: GradeChange[]; snapshot: GradeSnapshot } {
+  const currentCourseMap: Record<string, GradeCourseSnapshot> = {};
+  for (const g of currentGrades) {
+    const exams: Record<string, string> = {};
+    for (const ex of g.exams) {
+      if (ex.sinavTuru && ex.alinanNot) {
+        exams[ex.sinavTuru.trim()] = ex.alinanNot.trim();
+      }
+    }
+    currentCourseMap[g.courseCode] = {
+      courseName: g.courseName,
+      letterGrade: g.letterGrade || '--',
+      average: g.average,
+      exams,
+    };
+  }
+
+  const newSnapshot: GradeSnapshot = {
+    ...(prev || {}),
+    [semesterCode]: currentCourseMap,
+  };
+
+  if (!prev || !prev[semesterCode]) {
+    return { changes: [], snapshot: newSnapshot };
+  }
+
+  const prevSemester = prev[semesterCode];
+  const changes: GradeChange[] = [];
+
+  for (const [code, curr] of Object.entries(currentCourseMap)) {
+    const p = prevSemester[code];
+    if (!p) continue;
+
+    // Harf notu değişimi
+    if (curr.letterGrade !== '--' && curr.letterGrade !== '' && curr.letterGrade !== p.letterGrade) {
+      changes.push({
+        courseCode: code,
+        courseName: curr.courseName,
+        kind: 'letter',
+        label: 'Harf Notu',
+        oldValue: p.letterGrade,
+        newValue: curr.letterGrade,
+      });
+    }
+
+    // Sınav notu değişimleri
+    for (const [examName, score] of Object.entries(curr.exams)) {
+      const prevScore = p.exams[examName];
+      if (score && score !== prevScore) {
+        changes.push({
+          courseCode: code,
+          courseName: curr.courseName,
+          kind: 'exam',
+          label: examName,
+          oldValue: prevScore || '—',
+          newValue: score,
+        });
+      }
+    }
+  }
+
+  return { changes, snapshot: newSnapshot };
+}
+
+// ─── F9 & F10 Parsers ─────────────────────────────────────────────────────────
+
+/** Bir HTML parçasındaki data-label="X" hücrelerini {X: metin} olarak döner */
+function dataLabelCells(rowHtml: string): Record<string, string> {
+  const cells: Record<string, string> = {};
+  const re = /<td[^>]*data-label=["']([^"']*)["'][^>]*>([\s\S]*?)<\/td>/gi;
+  let m;
+  while ((m = re.exec(rowHtml)) !== null) cells[decodeEntities(m[1]).trim()] = textOf(m[2]);
+  return cells;
+}
+
+/**
+ * ogrenci_harc_bilgileri_devlet.aspx (doğrulandı 2026-09-12)
+ * Özet: <span id="lblTutarOncekiDonemBakiye|lblTutarAktifDonemBorc|lblTutarAktifDonemAlacak|lblTutarGenelBakiye">
+ * Hareketler: rptDonemler_lblDonemAd_N başlığı + data-label'lı satırlar (Tipi, Türü, Tutar, İade Tutar, Tahakkuk/Vade/Ödeme Tarihi)
+ */
+function parseTuition(html: string): Omit<ObsTuitionResult, 'semesters' | 'currentSemester'> {
+  const span = (id: string) => {
+    const m = html.match(new RegExp(`id=["']${id}["'][^>]*>([\\s\\S]*?)<\\/span>`, 'i'));
+    return m ? textOf(m[1]) : '';
+  };
+  const money = (s: string) => (s ? s.replace(/\s*TL$/i, '').trim() : '');
+  const prevBalance = money(span('lblTutarOncekiDonemBakiye'));
+  const accrued = money(span('lblTutarAktifDonemBorc'));
+  const paid = money(span('lblTutarAktifDonemAlacak'));
+  const generalBalance = money(span('lblTutarGenelBakiye'));
+
+  const toNum = (s: string) => parseFloat((s || '0').replace(/\./g, '').replace(',', '.')) || 0;
+  // Genel bakiye boşsa: önceki bakiye + dönemlik ücret - ödenen
+  const balanceNum = generalBalance ? toNum(generalBalance) : toNum(prevBalance) + toNum(accrued) - toNum(paid);
+  const balance = generalBalance || `${balanceNum.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const hasDebt = balanceNum > 0.005;
+
+  const items: ObsTuitionItem[] = [];
+  // Dönem başlıklarına göre böl: her parçada o dönemin hareket satırları var
+  const parts = html.split(/id=["']rptDonemler_lblDonemAd_\d+["'][^>]*>/i);
+  for (let i = 1; i < parts.length; i++) {
+    const semesterName = textOf(parts[i].substring(0, parts[i].indexOf('</span>')));
+    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let r;
+    while ((r = rowRe.exec(parts[i])) !== null) {
+      if (/<th\b/i.test(r[1])) continue;
+      const c = dataLabelCells(r[1]);
+      if (!c['Tutar'] && !c['Türü']) continue;
+      const kind = c['Türü'] || '';
+      items.push({
+        date: c['Ödeme Tarihi'] || c['Tahakkuk Tarihi'] || '',
+        amount: c['Tutar'] ? `${c['Tutar']} TL` : '',
+        description: [c['Tipi'], kind].filter(Boolean).join(' · '),
+        bank: semesterName,
+        kind: /ödeme/i.test(kind) ? 'payment' : /tahakkuk/i.test(kind) ? 'accrual' : 'other',
+        refund: c['İade Tutar'] || '',
+        dueDate: c['Vade Tarihi'] || '',
+      });
+    }
+  }
+
+  return {
+    accrued: accrued ? `${accrued} TL` : '0,00 TL',
+    paid: paid ? `${paid} TL` : '0,00 TL',
+    balance: `${balance} TL`,
+    hasDebt,
+    debtNotice: hasDebt ? `Ödenmemiş harç borcunuz bulunmaktadır: ${balance} TL` : undefined,
+    items,
+  };
+}
+
+/**
+ * st_akademik_takvim.aspx (doğrulandı 2026-09-12)
+ * <tr class="ProlizMGrid-row"> data-label="Takvim Adı" | "Başlangıç Tarihi" | "Bitiş Tarihi" (bitiş boş olabilir)
+ */
+function parseAcademicCalendar(html: string): ObsAcademicCalendarResult {
+  const items: ObsCalendarItem[] = [];
+  const now = new Date();
+  const parseDate = (s: string, endOfDay = false): Date | null => {
+    const m = s.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+    if (!m) return null;
+    const d = new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+    if (m[4]) d.setHours(parseInt(m[4], 10), parseInt(m[5], 10), 0, 0);
+    else if (endOfDay) d.setHours(23, 59, 59, 999);
+    return d;
+  };
+  const rowRe = /<tr[^>]*class=["'][^"']*ProlizMGrid-row[^"']*["'][^>]*>([\s\S]*?)<\/tr>/gi;
+  let r;
+  while ((r = rowRe.exec(html)) !== null) {
+    const c = dataLabelCells(r[1]);
+    const title = c['Takvim Adı'] || '';
+    const startDate = c['Başlangıç Tarihi'] || '';
+    const endDate = c['Bitiş Tarihi'] || '';
+    if (!title || !startDate) continue;
+    const s = parseDate(startDate);
+    const e = endDate ? parseDate(endDate, true) : null;
+    let isPast = false;
+    let isCurrent = false;
+    if (e) {
+      isPast = now > e;
+      isCurrent = !!s && now >= s && now <= e;
+    } else if (s) {
+      // Tek tarihli olaylar (ör. notların yayınlanması): gün geçtiyse geçmiş, bugünse güncel
+      const dayEnd = new Date(s);
+      dayEnd.setHours(23, 59, 59, 999);
+      isPast = now > dayEnd;
+      isCurrent = now >= s && now <= dayEnd;
+    }
+    items.push({
+      title,
+      startDate,
+      endDate,
+      rawDate: endDate ? `${startDate} – ${endDate}` : startDate,
+      isPast,
+      isCurrent,
+    });
+  }
+  // Güncel olanlar en üstte, sonra gelecek, en sonda geçmiş
+  items.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || Number(a.isPast) - Number(b.isPast));
+  return { title: 'Akademik Takvim', items };
+}
+
+/**
+ * ogrenci_mufredat_ders.aspx (doğrulandı 2026-09-12)
+ * Gruplar: <div class='card-header' …>N. Sınıf &#160;Güz|Bahar</div>
+ * Satır: <div class="row data-row"> sol (müfredat: rptDers_lblDersKod_N, ad, Z/S, krd, akts) + sağ (alınan: dönem, kod, ad, Z/S, krd, akts, harf)
+ * Özet: lblToplamKrediAKTSBilgileriSag (Alınan Kredi/AKTS, Genel Not Ort, Sınıf), lblToplamKrediAKTSBilgileri (Başarılı Kredi/AKTS)
+ */
+function parseCurriculum(html: string): ObsCurriculumResult {
+  const PASS = /^(AA|BA|BB|CB|CC|DC|DD|G|B|YT|M)$/i;
+  const FAIL = /^(FF|FD|F|K|DZ|YZ)$/i;
+  const cols = (fragment: string): string[] =>
+    Array.from(fragment.matchAll(/<div class=['"]col-md-\d+ col-\d+[^'"]*['"][^>]*>([\s\S]*?)<\/div>/gi)).map((m) => textOf(m[1]));
+
+  const semesters: ObsCurriculumSemester[] = [];
+  const groups = html.split(/class=['"]card-header['"]/i);
+  for (let gi = 1; gi < groups.length; gi++) {
+    const g = groups[gi];
+    const head = textOf(g.substring(0, Math.min(g.length, 800)));
+    const tm = head.match(/(\d+)\.\s*Sınıf\s*(Güz|Bahar|Yaz)/i);
+    if (!tm) continue;
+    const classYear = parseInt(tm[1], 10);
+    const term = tm[2];
+    const semesterNumber = (classYear - 1) * 2 + (/güz/i.test(term) ? 1 : 2);
+    const rows = g.split(/class=["']row data-row["']/i).slice(1);
+    const courses: ObsCurriculumCourse[] = [];
+    let totalAkts = 0;
+    let completedAkts = 0;
+    for (const row of rows) {
+      const leftEnd = row.indexOf('<!-- Sağ taraf');
+      const left = leftEnd > 0 ? row.substring(0, leftEnd) : row;
+      const right = leftEnd > 0 ? row.substring(leftEnd) : '';
+      const code = textOf(left.match(/rptDers_lblDersKod_\d+["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || '');
+      if (!code) continue;
+      const lc = cols(left); // [kod, ad, Z/S, krd, akts]
+      const name = lc[1] || '';
+      const zs = lc[2] || '';
+      const credit = parseFloat((lc[3] || '0').replace(',', '.')) || 0;
+      const akts = parseFloat((lc[4] || '0').replace(',', '.')) || 0;
+      const rc = cols(right); // [dönem, kod, ad, Z/S, krd, akts, harf] — alınmamışsa boş
+      const letter = (rc[6] || '').replace(/[^A-ZÇĞİÖŞÜ-]/g, '').trim();
+      let status: ObsCurriculumCourse['status'] = 'not_taken';
+      if (rc.length > 0 && rc[0]) {
+        if (PASS.test(letter)) status = 'passed';
+        else if (FAIL.test(letter)) status = 'failed';
+        else status = 'current';
+      }
+      if (status === 'passed') completedAkts += akts;
+      totalAkts += akts;
+      courses.push({ code, name, credit, akts, isCompulsory: /^Z/i.test(zs), status, letterGrade: letter || undefined });
+    }
+    if (courses.length > 0) {
+      semesters.push({ semesterNumber, title: `${classYear}. Sınıf ${term}`, courses, totalAkts, completedAkts });
+    }
+  }
+  semesters.sort((a, b) => a.semesterNumber - b.semesterNumber);
+
+  const totalRequiredAkts = semesters.reduce((a, s) => a + s.totalAkts, 0);
+  // Resmî özet (varsa) hesaplanan değeri doğrular
+  const summaryDone = html.match(/Başarılı Olunan[\s\S]*?AKTS\s*(\d+)/i);
+  const totalCompletedAkts = summaryDone ? parseInt(summaryDone[1], 10) : semesters.reduce((a, s) => a + s.completedAkts, 0);
+  const completionPercentage = totalRequiredAkts > 0 ? Math.min(100, Math.round((totalCompletedAkts / totalRequiredAkts) * 100)) : 0;
+
+  return { semesters, totalRequiredAkts, totalCompletedAkts, completionPercentage };
+}
+
+function parseMessages(html: string): ObsMessagesResult {
+  const messages: ObsMessage[] = [];
+  let unreadCount = 0;
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let r;
+  while ((r = rowRe.exec(html)) !== null) {
+    const rowHtml = r[1];
+    if (/<th\b/i.test(rowHtml)) continue;
+    const cols: string[] = [];
+    const colRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    let c;
+    while ((c = colRe.exec(rowHtml)) !== null) cols.push(textOf(c[1]));
+
+    const targetM = rowHtml.match(/__doPostBack\(['"]([^'"]+)['"]/);
+    const selectTarget = targetM ? targetM[1] : '';
+
+    if (cols.length >= 3) {
+      const isUnread = /font-weight:\s*bold|fw-bold|unread|fa-envelope\b/i.test(rowHtml) && !/fa-envelope-open/i.test(rowHtml);
+      if (isUnread) unreadCount++;
+
+      const sender = cols.length >= 4 ? cols[1] : cols[0];
+      const subject = cols.length >= 4 ? cols[2] : cols[1];
+      const date = cols.length >= 4 ? cols[3] : cols[2];
+
+      if (sender && subject) {
+        messages.push({
+          id: selectTarget || `msg-${messages.length}`,
+          sender,
+          subject,
+          date,
+          isRead: !isUnread,
+          selectTarget: selectTarget || undefined,
+        });
+      }
+    }
+  }
+
+  return { messages, unreadCount };
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export const ObsService = {
@@ -1035,21 +1444,11 @@ export const ObsService = {
 
   /** OBS'ye giriş (CAS). Aynı anda birden fazla çağrı tek girişe indirgenir. */
   async login(studentNo: string, password: string): Promise<boolean> {
-    if (loginPromise) return loginPromise;
-    loginPromise = casLogin(studentNo, password).finally(() => {
-      loginPromise = null;
-    });
-    return loginPromise;
+    return loginRaw(studentNo, password);
   },
 
   async autoLogin(): Promise<boolean> {
-    const creds = await this.getCredentials();
-    if (!creds) return false;
-    try {
-      return await this.login(creds.studentNo, creds.password);
-    } catch {
-      return false;
-    }
+    return autoLoginRaw();
   },
 
   logout(): void {
@@ -1068,7 +1467,7 @@ export const ObsService = {
   /** Öğrenci + akademik özet (duyuru paneli) + danışman */
   async getDashboard(force = false): Promise<ObsDashboard> {
     if (!isSessionValid || !cachedStudent) {
-      const ok = await this.autoLogin();
+      const ok = await autoLoginRaw();
       if (!ok || !cachedStudent) throw new Error('OBS oturumu başlatılamadı. Lütfen tekrar giriş yapın.');
     }
     if (force || !cachedAcademic) {
@@ -1204,4 +1603,90 @@ export const ObsService = {
   getTranscriptPdfUrl(): string {
     return menuUrls['Transkript'] || `${OBS_STD}/caller.aspx?curPage=${PAGE.transkriptPdf}`;
   },
+
+  // ─── F9: Harç Bilgileri ───────────────────────────────────────────────────
+  async getTuition(semesterCode?: string): Promise<ObsTuitionResult> {
+    const res = await loadSemesterPage('Harç Bilgileri', PAGE.harc, semesterCode);
+    const parsed = parseTuition(res.html);
+    return {
+      ...parsed,
+      semesters: res.semesters,
+      currentSemester: res.current,
+    };
+  },
+
+  // ─── F9: Akademik Takvim ──────────────────────────────────────────────────
+  async getAcademicCalendar(): Promise<ObsAcademicCalendarResult> {
+    const page = await openPage('Akademik Takvim', PAGE.akademikTakvim);
+    return parseAcademicCalendar(page.html);
+  },
+
+  // ─── F9: Müfredat Durum ───────────────────────────────────────────────────
+  async getCurriculum(): Promise<ObsCurriculumResult> {
+    const page = await openPage('Müfredat Durum', PAGE.mufredatDurum);
+    return parseCurriculum(page.html);
+  },
+
+  // ─── F10: Gelen Mesajlar ──────────────────────────────────────────────────
+  async getMessages(): Promise<ObsMessagesResult> {
+    const page = await openPage('Gelen Mesajlar', PAGE.gelenMesajlar);
+    return parseMessages(page.html);
+  },
+
+  async getMessageDetail(msg: ObsMessage): Promise<ObsMessageDetail> {
+    let body = '';
+    if (msg.selectTarget) {
+      try {
+        const page = await openPage('Gelen Mesajlar', PAGE.gelenMesajlar);
+        const res = await postbackPage(page, msg.selectTarget, '');
+        body = toLines(res.html);
+      } catch {
+        body = 'Mesaj içeriği yüklenemedi.';
+      }
+    }
+    return {
+      id: msg.id,
+      sender: msg.sender,
+      subject: msg.subject,
+      date: msg.date,
+      body: body || 'Mesaj içeriği bulunamadı.',
+    };
+  },
 };
+
+/**
+ * OBS oturumu tek bir çerez kavanozu/ViewState üzerinden yürür ve her postback ilgili sayfanın GET'inden
+ * hemen sonra yapılmalıdır. Ana sayfa (ders programı), bildirim senkronu ve OBS ekranı aynı anda istek
+ * atabildiğinden sayfa akışları burada sıraya alınır: bir çağrı bitmeden diğeri başlamaz.
+ */
+let obsQueue: Promise<unknown> = Promise.resolve();
+function serialized<T extends (...args: any[]) => Promise<any>>(fn: T): T {
+  return (async (...args: any[]) => {
+    const run = obsQueue.then(() => fn(...args));
+    obsQueue = run.catch(() => undefined);
+    return run;
+  }) as T;
+}
+(
+  [
+    'login',
+    'autoLogin',
+    'getDashboard',
+    'getGrades',
+    'getGradeStatistics',
+    'getTimetable',
+    'getTakenCourses',
+    'getCourseHistory',
+    'getAttendance',
+    'getExamSchedule',
+    'getTuition',
+    'getAcademicCalendar',
+    'getCurriculum',
+    'getMessages',
+    'getMessageDetail',
+  ] as const
+).forEach((name) => {
+  const original = (ObsService as any)[name].bind(ObsService);
+  (ObsService as any)[name] = serialized(original);
+});
+

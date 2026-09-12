@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Theme } from '../constants/Theme';
+import { Theme, themedStyles, useAppTheme } from '../constants/Theme';
 import {
   ObsService,
   ObsDashboard,
@@ -28,18 +28,42 @@ import {
   ObsSemesterHistory,
   ObsSemester,
   ObsGradeStatistics,
+  ObsTuitionResult,
+  ObsAcademicCalendarResult,
+  ObsCurriculumResult,
+  ObsMessagesResult,
+  ObsMessage,
+  ObsMessageDetail,
+  diffGrades,
 } from '../services/obsService';
-import { Card, Chip, Pill, StatTile, EmptyState, LoadingState, PrimaryButton, Notice, ScreenHeader } from '../components/ui';
+import { PrefsService, GradeChange } from '../services/prefsService';
+import { Card, Chip, Pill, StatTile, EmptyState, LoadingState, PrimaryButton, Notice, ScreenHeader, IconCircle } from '../components/ui';
 
 const C = Theme.colors;
 const RED = C.uniRed;
 
-type TabKey = 'notlar' | 'program' | 'dersler' | 'devamsizlik' | 'sinavlar' | 'gecmis' | 'danisman';
+type TabKey =
+  | 'notlar'
+  | 'program'
+  | 'dersler'
+  | 'sinavlar'
+  | 'harc'
+  | 'takvim'
+  | 'mufredat'
+  | 'mesajlar'
+  | 'devamsizlik'
+  | 'gecmis'
+  | 'danisman';
+
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'notlar', label: 'Notlar', icon: 'clipboard-text-outline' },
   { key: 'program', label: 'Ders Programı', icon: 'calendar-clock' },
   { key: 'dersler', label: 'Dersler', icon: 'book-open-variant' },
   { key: 'sinavlar', label: 'Sınavlar', icon: 'calendar-star' },
+  { key: 'harc', label: 'Harç Bilgileri', icon: 'cash-multiple' },
+  { key: 'takvim', label: 'Akademik Takvim', icon: 'calendar-text' },
+  { key: 'mufredat', label: 'Müfredat', icon: 'chart-donut' },
+  { key: 'mesajlar', label: 'Gelen Mesajlar', icon: 'email-outline' },
   { key: 'devamsizlik', label: 'Devamsızlık', icon: 'account-clock-outline' },
   { key: 'gecmis', label: 'Ders Geçmişi', icon: 'history' },
   { key: 'danisman', label: 'Danışman', icon: 'account-tie-outline' },
@@ -58,6 +82,7 @@ function shortSemester(name: string) {
 }
 
 export default function ObsScreen() {
+  useAppTheme();
   const router = useRouter();
   const [phase, setPhase] = useState<'checking' | 'login' | 'ready'>('checking');
   const [studentNo, setStudentNo] = useState('');
@@ -79,15 +104,24 @@ export default function ObsScreen() {
   const [exams, setExams] = useState<ObsExamScheduleResult | null>(null);
   const [history, setHistory] = useState<ObsSemesterHistory[] | null>(null);
   const [historyProgress, setHistoryProgress] = useState('');
+  const [tuition, setTuition] = useState<ObsTuitionResult | null>(null);
+  const [calendar, setCalendar] = useState<ObsAcademicCalendarResult | null>(null);
+  const [curriculum, setCurriculum] = useState<ObsCurriculumResult | null>(null);
+  const [messages, setMessages] = useState<ObsMessagesResult | null>(null);
+  const [unseenGrades, setUnseenGrades] = useState<GradeChange[]>([]);
   const [tabBusy, setTabBusy] = useState(false);
   const [tabError, setTabError] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  // Sınav istatistikleri
+  // Sınav istatistikleri & Mesaj modalı
   const [stats, setStats] = useState<ObsGradeStatistics | null>(null);
   const [statsBusy, setStatsBusy] = useState<number | null>(null);
   const [statsError, setStatsError] = useState('');
   const [statsVisible, setStatsVisible] = useState(false);
+
+  const [selectedMessage, setSelectedMessage] = useState<ObsMessageDetail | null>(null);
+  const [msgModalVisible, setMsgModalVisible] = useState(false);
+  const [msgLoading, setMsgLoading] = useState(false);
 
   const openStats = async (statsIndex: number) => {
     if (!grades) return;
@@ -169,6 +203,10 @@ export default function ObsScreen() {
           setCourses(null);
           setAttendance(null);
           setExams(null);
+          setTuition(null);
+          setCalendar(null);
+          setCurriculum(null);
+          setMessages(null);
           setHistory(null);
           setPassword('');
           setPhase('login');
@@ -176,6 +214,10 @@ export default function ObsScreen() {
       },
     ]);
   };
+
+  useEffect(() => {
+    PrefsService.getUnseenGrades().then(setUnseenGrades).catch(() => {});
+  }, []);
 
   // ── Sekme verisi ──────────────────────────────────────────────────────────
   const loadTab = useCallback(
@@ -187,16 +229,38 @@ export default function ObsScreen() {
         (key === 'dersler' && courses) ||
         (key === 'devamsizlik' && attendance) ||
         (key === 'sinavlar' && exams) ||
+        (key === 'harc' && tuition) ||
+        (key === 'takvim' && calendar) ||
+        (key === 'mufredat' && curriculum) ||
+        (key === 'mesajlar' && messages) ||
         (key === 'gecmis' && history) ||
         key === 'danisman';
       if (has && !semester && !force) return;
       setTabBusy(true);
       try {
-        if (key === 'notlar') setGrades(await ObsService.getGrades(semester));
+        if (key === 'notlar') {
+          const res = await ObsService.getGrades(semester);
+          setGrades(res);
+          try {
+            const prevSnap = await PrefsService.getGradeSnapshot();
+            const { changes, snapshot } = diffGrades(prevSnap, res.grades, res.currentSemester);
+            await PrefsService.setGradeSnapshot(snapshot);
+            if (changes.length > 0) {
+              const currentUnseen = await PrefsService.getUnseenGrades();
+              const updated = [...currentUnseen, ...changes];
+              await PrefsService.setUnseenGrades(updated);
+              setUnseenGrades(updated);
+            }
+          } catch {}
+        }
         else if (key === 'program') setTimetable(await ObsService.getTimetable(semester));
         else if (key === 'dersler') setCourses(await ObsService.getTakenCourses(semester));
         else if (key === 'devamsizlik') setAttendance(await ObsService.getAttendance(semester));
         else if (key === 'sinavlar') setExams(await ObsService.getExamSchedule(semester));
+        else if (key === 'harc') setTuition(await ObsService.getTuition(semester));
+        else if (key === 'takvim') setCalendar(await ObsService.getAcademicCalendar());
+        else if (key === 'mufredat') setCurriculum(await ObsService.getCurriculum());
+        else if (key === 'mesajlar') setMessages(await ObsService.getMessages());
         else if (key === 'gecmis') {
           setHistory(await ObsService.getCourseHistory((d, t) => setHistoryProgress(`${d}/${t} dönem`)));
           setHistoryProgress('');
@@ -207,7 +271,7 @@ export default function ObsScreen() {
         setTabBusy(false);
       }
     },
-    [grades, timetable, courses, attendance, exams, history]
+    [grades, timetable, courses, attendance, exams, tuition, calendar, curriculum, messages, history]
   );
 
   useEffect(() => {
@@ -247,11 +311,26 @@ export default function ObsScreen() {
               const key = `g-${i}`;
               const open = expanded === key;
               const tone = gradeTone(g.letterGrade);
+              const isUnseen = unseenGrades.some((u) => u.courseCode === g.courseCode);
               return (
-                <Card key={key} style={styles.item} onPress={() => setExpanded(open ? null : key)}>
+                <Card
+                  key={key}
+                  style={styles.item}
+                  onPress={async () => {
+                    setExpanded(open ? null : key);
+                    if (isUnseen) {
+                      await PrefsService.clearUnseenForCourse(g.courseCode);
+                      const remaining = await PrefsService.getUnseenGrades();
+                      setUnseenGrades(remaining);
+                    }
+                  }}
+                >
                   <View style={styles.itemRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.itemTitle}>{g.courseName || g.courseCode}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.itemTitle}>{g.courseName || g.courseCode}</Text>
+                        {isUnseen ? <Pill label="YENİ" color={C.accentDark} bg={C.accentBg} /> : null}
+                      </View>
                       <Text style={styles.itemSub}>{g.courseCode}</Text>
                       <View style={styles.metaRow}>
                         {g.average != null ? <Pill label={`Ort ${g.average}`} color={C.textSecondary} bg={C.surfaceSubtle} /> : null}
@@ -543,6 +622,257 @@ export default function ObsScreen() {
     );
   };
 
+  // ─── F9 & F10 Görünümleri ──────────────────────────────────────────────────
+  const renderTuition = () => {
+    if (!tuition) return null;
+    return (
+      <View style={{ gap: 12 }}>
+        <SemesterBar
+          semesters={tuition.semesters}
+          current={tuition.currentSemester}
+          onSelect={(c) => loadTab('harc', c)}
+        />
+        {tuition.hasDebt ? (
+          <Notice tone="warning" text={tuition.debtNotice || 'Ödenmemiş harç borcunuz bulunmaktadır.'} />
+        ) : (
+          <Notice tone="success" text="Ödenmemiş harç borcunuz bulunmamaktadır." />
+        )}
+        <View style={styles.statRow}>
+          <StatTile label="Tahakkuk" value={tuition.accrued} color={RED} />
+          <StatTile label="Ödenen" value={tuition.paid} color={C.success} />
+          <StatTile label="Kalan Borç" value={tuition.balance} color={tuition.hasDebt ? C.danger : C.textSecondary} />
+        </View>
+        {tuition.items.length > 0 ? (
+          <View style={styles.list}>
+            <Text style={styles.sectionHeading}>Ödeme ve Dekont Hareketleri</Text>
+            {tuition.items.map((it, idx) => (
+              <Card key={idx} style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={styles.itemTitle}>{it.description || 'Harç Ödemesi'}</Text>
+                  <Text style={[styles.itemTitle, { color: C.success }]}>{it.amount}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={styles.itemSub}>{it.bank || 'Banka / Vezne'}</Text>
+                  <Text style={styles.itemSub}>{it.date}</Text>
+                </View>
+              </Card>
+            ))}
+          </View>
+        ) : (
+          <EmptyState
+            icon="cash-remove"
+            title="Ödeme kaydı bulunamadı"
+            description="Bu dönem için kayıtlı dekont veya ödeme hareketi yok."
+            tint={RED}
+          />
+        )}
+      </View>
+    );
+  };
+
+  const renderAcademicCalendar = () => {
+    if (!calendar) return null;
+    if (calendar.items.length === 0) {
+      return (
+        <EmptyState
+          icon="calendar-blank-outline"
+          title="Akademik takvim verisi yok"
+          description="Fırat Üniversitesi akademik takvimi henüz yayınlanmamış olabilir."
+          tint={RED}
+        />
+      );
+    }
+    return (
+      <View style={styles.list}>
+        {calendar.items.map((it, idx) => (
+          <Card
+            key={idx}
+            style={[
+              styles.item,
+              it.isCurrent && { borderColor: RED, borderWidth: 1.5, backgroundColor: C.uniRedWash },
+              it.isPast && { opacity: 0.6 },
+            ]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+              <IconCircle
+                name={it.isCurrent ? 'calendar-star' : it.isPast ? 'calendar-check' : 'calendar-clock'}
+                color={it.isCurrent ? RED : it.isPast ? C.textMuted : C.primary}
+                bg={it.isCurrent ? C.uniRedSoft : it.isPast ? C.surfaceSubtle : C.surfaceVariant}
+              />
+              <View style={{ flex: 1, gap: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={[styles.itemTitle, it.isPast && { color: C.textMuted }]}>{it.title}</Text>
+                  {it.isCurrent ? (
+                    <Pill label="ŞU AN" color={C.textWhite} bg={RED} />
+                  ) : it.isPast ? (
+                    <Pill label="Tamamlandı" color={C.textMuted} bg={C.surfaceSubtle} />
+                  ) : null}
+                </View>
+                <Text style={styles.itemSub}>{it.rawDate}</Text>
+              </View>
+            </View>
+          </Card>
+        ))}
+      </View>
+    );
+  };
+
+  const renderCurriculum = () => {
+    if (!curriculum) return null;
+    return (
+      <View style={{ gap: 14 }}>
+        {/* İlerleme Özeti */}
+        <Card style={{ gap: 10 }}>
+          <Text style={styles.itemTitle}>Mezuniyet İlerleme Durumu</Text>
+          <View style={styles.statRow}>
+            <StatTile label="Gereken AKTS" value={String(curriculum.totalRequiredAkts)} color={RED} />
+            <StatTile label="Tamamlanan" value={String(curriculum.totalCompletedAkts)} color={C.success} />
+            <StatTile label="Tamamlanma" value={`%${curriculum.completionPercentage}`} color={RED} />
+          </View>
+          <View style={styles.barTrack}>
+            <View
+              style={[
+                styles.barFill,
+                { width: `${curriculum.completionPercentage}%`, backgroundColor: RED },
+              ]}
+            />
+          </View>
+        </Card>
+
+        {/* Yarıyıl Listesi */}
+        {curriculum.semesters.map((sem, sIdx) => (
+          <View key={sIdx} style={{ gap: 8 }}>
+            <View style={styles.dayHead}>
+              <Text style={styles.dayHeadText}>{sem.title}</Text>
+              <Text style={{ ...Theme.text.caption, color: RED, fontWeight: '700' }}>
+                {sem.completedAkts} / {sem.totalAkts} AKTS
+              </Text>
+            </View>
+            <View style={styles.list}>
+              {sem.courses.map((c, cIdx) => (
+                <Card key={cIdx} style={styles.item}>
+                  <View style={styles.itemRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle}>{c.name}</Text>
+                      <Text style={styles.itemSub}>{c.code}</Text>
+                      <View style={styles.metaRow}>
+                        <Pill label={`${c.akts} AKTS`} color={C.textSecondary} bg={C.surfaceSubtle} />
+                        <Pill label={c.isCompulsory ? 'Zorunlu' : 'Seçmeli'} color={C.textMuted} bg={C.surfaceSubtle} />
+                        <Pill
+                          label={
+                            c.status === 'passed'
+                              ? 'Geçti'
+                              : c.status === 'failed'
+                              ? 'Kaldı'
+                              : c.status === 'current'
+                              ? 'Alıyor'
+                              : 'Alınmadı'
+                          }
+                          color={
+                            c.status === 'passed'
+                              ? C.success
+                              : c.status === 'failed'
+                              ? C.danger
+                              : c.status === 'current'
+                              ? C.accentDark
+                              : C.textMuted
+                          }
+                          bg={
+                            c.status === 'passed'
+                              ? C.successBg
+                              : c.status === 'failed'
+                              ? C.dangerBg
+                              : c.status === 'current'
+                              ? C.accentBg
+                              : C.surfaceSubtle
+                          }
+                        />
+                      </View>
+                    </View>
+                    {c.letterGrade ? (
+                      <View style={[styles.gradeBox, { backgroundColor: gradeTone(c.letterGrade).bg }]}>
+                        <Text style={[styles.gradeText, { color: gradeTone(c.letterGrade).fg }]}>
+                          {c.letterGrade}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </Card>
+              ))}
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  const openMessage = async (msg: ObsMessage) => {
+    setMsgModalVisible(true);
+    setMsgLoading(true);
+    setSelectedMessage(null);
+    try {
+      const detail = await ObsService.getMessageDetail(msg);
+      setSelectedMessage(detail);
+    } catch {
+      setSelectedMessage({
+        id: msg.id,
+        sender: msg.sender,
+        subject: msg.subject,
+        date: msg.date,
+        body: 'Mesaj içeriği alınamadı.',
+      });
+    } finally {
+      setMsgLoading(false);
+    }
+  };
+
+  const renderMessages = () => {
+    if (!messages) return null;
+    if (messages.messages.length === 0) {
+      return (
+        <EmptyState
+          icon="email-outline"
+          title="Gelen mesajınız yok"
+          description="Danışman veya öğretim elemanlarından gelen yeni mesaj bulunmuyor."
+          tint={RED}
+        />
+      );
+    }
+    return (
+      <View style={styles.list}>
+        {messages.unreadCount > 0 && (
+          <Notice tone="info" text={`${messages.unreadCount} adet okunmamış mesajınız bulunmaktadır.`} />
+        )}
+        {messages.messages.map((m, idx) => (
+          <Card
+            key={idx}
+            style={[styles.item, !m.isRead && { borderColor: C.primary, borderWidth: 1.2 }]}
+            onPress={() => openMessage(m)}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <IconCircle
+                name={m.isRead ? 'email-open-outline' : 'email'}
+                color={m.isRead ? C.textMuted : C.primary}
+                bg={m.isRead ? C.surfaceSubtle : C.surfaceVariant}
+              />
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={[styles.itemTitle, !m.isRead && { fontWeight: '800' }]}>{m.sender}</Text>
+                  {!m.isRead ? <Pill label="YENİ" color={C.primary} bg={C.surfaceVariant} /> : null}
+                </View>
+                <Text style={[styles.itemSub, !m.isRead && { color: C.textPrimary, fontWeight: '600' }]}>
+                  {m.subject}
+                </Text>
+                <Text style={styles.footNoteDate}>{m.date}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+            </View>
+          </Card>
+        ))}
+      </View>
+    );
+  };
+
   const tabContent = useMemo(() => {
     if (tabError) return <Notice tone="danger" text={tabError} onPress={() => loadTab(tab, undefined, true)} />;
     if (tabBusy) return <LoadingState label={tab === 'gecmis' && historyProgress ? `Ders geçmişi alınıyor (${historyProgress})` : 'OBS\'den alınıyor...'} tint={RED} />;
@@ -557,13 +887,21 @@ export default function ObsScreen() {
         return renderAttendance();
       case 'sinavlar':
         return renderExams();
+      case 'harc':
+        return renderTuition();
+      case 'takvim':
+        return renderAcademicCalendar();
+      case 'mufredat':
+        return renderCurriculum();
+      case 'mesajlar':
+        return renderMessages();
       case 'gecmis':
         return renderHistory();
       case 'danisman':
         return renderAdvisor();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, tabBusy, tabError, grades, timetable, courses, attendance, exams, history, expanded, dashboard, historyProgress]);
+  }, [tab, tabBusy, tabError, grades, timetable, courses, attendance, exams, tuition, calendar, curriculum, messages, history, expanded, dashboard, historyProgress, unseenGrades]);
 
   // ── Login ekranı ──────────────────────────────────────────────────────────
   const renderLogin = () => (
@@ -626,7 +964,7 @@ export default function ObsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={RED} />
+      <StatusBar barStyle={Theme.colors.statusBar} backgroundColor={RED} />
       <View style={styles.topBar}>
         <ScreenHeader title="OBS" subtitle="Fırat Üniversitesi Öğrenci Bilgi Sistemi" light onBack={() => router.back()}
           right={
@@ -687,9 +1025,27 @@ export default function ObsScreen() {
 
           {/* Sekmeler */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-            {TABS.map((t) => (
-              <Chip key={t.key} label={t.label} icon={t.icon} active={tab === t.key} tint={RED} onPress={() => { setExpanded(null); setTab(t.key); }} />
-            ))}
+            {TABS.map((t) => {
+              let badge: string | undefined;
+              if (t.key === 'notlar' && unseenGrades.length > 0) {
+                badge = `${unseenGrades.length}`;
+              } else if (t.key === 'mesajlar' && messages && messages.unreadCount > 0) {
+                badge = `${messages.unreadCount}`;
+              }
+              return (
+                <Chip
+                  key={t.key}
+                  label={badge ? `${t.label} (${badge})` : t.label}
+                  icon={t.icon}
+                  active={tab === t.key}
+                  tint={RED}
+                  onPress={() => {
+                    setExpanded(null);
+                    setTab(t.key);
+                  }}
+                />
+              );
+            })}
           </ScrollView>
 
           {tabContent}
@@ -800,11 +1156,43 @@ export default function ObsScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Mesaj Detayı Modalı */}
+      <Modal visible={msgModalVisible} animationType="slide" onRequestClose={() => setMsgModalVisible(false)}>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <View style={styles.topBar}>
+            <ScreenHeader
+              title={selectedMessage ? selectedMessage.sender : 'Mesaj'}
+              subtitle={selectedMessage ? selectedMessage.date : 'Mesaj detayı'}
+              light
+              onBack={() => setMsgModalVisible(false)}
+            />
+          </View>
+          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            {msgLoading ? (
+              <LoadingState label="Mesaj yükleniyor..." tint={RED} />
+            ) : selectedMessage ? (
+              <Card style={{ gap: 14 }}>
+                <View style={{ gap: 4 }}>
+                  <Text style={styles.itemTitle}>{selectedMessage.subject}</Text>
+                  <Text style={styles.itemSub}>Gönderen: {selectedMessage.sender}</Text>
+                  <Text style={styles.itemSub}>Tarih: {selectedMessage.date}</Text>
+                </View>
+                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: C.divider }} />
+                <Text style={{ ...Theme.text.body, color: C.textPrimary, lineHeight: 22 }}>
+                  {selectedMessage.body}
+                </Text>
+              </Card>
+            ) : null}
+            <View style={{ height: 32 }} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
   topBar: { backgroundColor: RED },
   logoutBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
@@ -874,4 +1262,6 @@ const styles = StyleSheet.create({
   histRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   histGrade: { fontSize: 13, fontWeight: '800', width: 32, textAlign: 'right' },
   footNote: { ...Theme.text.small, color: C.textMuted, lineHeight: 17, textAlign: 'center', paddingHorizontal: 8 },
-});
+  sectionHeading: { ...Theme.text.h3, color: C.textPrimary, marginVertical: 4 },
+  footNoteDate: { ...Theme.text.caption, color: C.textMuted, marginTop: 2 },
+}));

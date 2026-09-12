@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Theme } from '../constants/Theme';
+import { Theme, themedStyles } from '../constants/Theme';
 import { ApiService, PrayerTime } from '../services/apiService';
 import { Card, LoadingState } from './ui';
 
@@ -83,7 +83,7 @@ export const PrayerCard: React.FC<{ compact?: boolean }> = ({ compact }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   card: { marginHorizontal: Theme.spacing.lg, gap: 12 },
   top: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconWrap: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.prayerBg, alignItems: 'center', justifyContent: 'center' },
@@ -98,4 +98,4 @@ const styles = StyleSheet.create({
   timeNameActive: { color: 'rgba(255,255,255,0.85)' },
   timeValue: { fontSize: 13, fontWeight: '800', color: C.textPrimary, marginTop: 2 },
   timeValueActive: { color: '#fff' },
-});
+}));

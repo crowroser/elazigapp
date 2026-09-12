@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Theme } from '../constants/Theme';
+import { Theme, themedStyles, useAppTheme } from '../constants/Theme';
 import { WidgetService, WidgetData } from '../services/widgetService';
 import { ApiService } from '../services/apiService';
 import { PrefsService } from '../services/prefsService';
@@ -12,6 +12,7 @@ import { Card, IconCircle, Notice, PrimaryButton } from '../components/ui';
 const C = Theme.colors;
 
 export default function WidgetsScreen() {
+  useAppTheme();
   const [data, setData] = useState<WidgetData>({});
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'info' | 'warning' | 'success' | 'danger'; text: string } | null>(null);
@@ -127,7 +128,7 @@ export default function WidgetsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
   content: { padding: Theme.spacing.lg, gap: Theme.spacing.md },
   lead: { ...Theme.text.small, color: C.textMuted, lineHeight: 18 },
@@ -136,4 +137,4 @@ const styles = StyleSheet.create({
   line: { ...Theme.text.small, color: C.textSecondary },
   empty: { ...Theme.text.small, color: C.textFaint },
   updated: { ...Theme.text.small, color: C.textFaint, textAlign: 'center' },
-});
+}));

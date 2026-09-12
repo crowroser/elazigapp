@@ -3,11 +3,13 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Linkin
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Theme } from '../../constants/Theme';
+import { Theme, themedStyles, useAppTheme } from '../../constants/Theme';
 import { ApiService, DiningMenu, AcademicAnnouncement, AnnouncementDetailData } from '../../services/apiService';
 import { ObsService, ObsStudentInfo } from '../../services/obsService';
+import { PrefsService } from '../../services/prefsService';
+import { formatLastUpdated } from '../../services/cacheService';
 import { AnnouncementDetailModal } from '../../components/AnnouncementDetailModal';
-import { Card, Chip, SectionTitle, EmptyState, LoadingState, ListRow, Pill } from '../../components/ui';
+import { Card, Chip, SectionTitle, EmptyState, LoadingState, ListRow, Pill, Notice } from '../../components/ui';
 
 const C = Theme.colors;
 const RED = C.uniRed;
@@ -28,8 +30,11 @@ const DINING_ICON: Record<string, string> = {
 const UNITS = ['Tümü', 'Mühendislik', 'Teknoloji', 'Tıp', 'İİBF', 'Eğitim', 'İletişim'];
 
 export default function UniversityScreen() {
+  useAppTheme();
   const router = useRouter();
   const [menu, setMenu] = useState<DiningMenu | null>(null);
+  const [diningStale, setDiningStale] = useState(false);
+  const [diningAt, setDiningAt] = useState(0);
   const [announcements, setAnnouncements] = useState<AcademicAnnouncement[]>([]);
   const [events, setEvents] = useState<AcademicAnnouncement[]>([]);
   const [unit, setUnit] = useState('Tümü');
@@ -41,10 +46,21 @@ export default function UniversityScreen() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [obsStudent, setObsStudent] = useState<ObsStudentInfo | null>(null);
   const [obsSaved, setObsSaved] = useState(false);
+  const [unseenCount, setUnseenCount] = useState(0);
 
-  const load = useCallback(async () => {
-    const [m, a, e] = await Promise.all([ApiService.getDiningMenu(), ApiService.getAcademicAnnouncements(), ApiService.getAcademicEvents()]);
-    setMenu(m);
+  const load = useCallback(async (force = false) => {
+    const [mRes, a, e] = await Promise.all([
+      ApiService.getDiningMenuWithCache(force).catch(() => ({
+        data: { date: '', lunch: [], dinner: [], priceStudent: '', priceStaff: '' },
+        stale: true,
+        at: 0,
+      })),
+      ApiService.getAcademicAnnouncements(),
+      ApiService.getAcademicEvents(),
+    ]);
+    setMenu(mRes.data);
+    setDiningStale(mRes.stale);
+    setDiningAt(mRes.at);
     setAnnouncements(a);
     setEvents(e);
     setLoading(false);
@@ -58,12 +74,13 @@ export default function UniversityScreen() {
     useCallback(() => {
       setObsStudent(ObsService.getCachedStudent());
       ObsService.getCredentials().then((c) => setObsSaved(!!c));
+      PrefsService.getUnseenGrades().then((unseen) => setUnseenCount(unseen.length));
     }, [])
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load(true);
     setRefreshing(false);
   };
 
@@ -90,7 +107,7 @@ export default function UniversityScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={RED} />
+      <StatusBar barStyle={Theme.colors.statusBar} backgroundColor={RED} />
       {/* Kırmızı hero */}
       <View style={styles.hero}>
         <View style={{ flex: 1 }}>
@@ -113,7 +130,12 @@ export default function UniversityScreen() {
             <MaterialCommunityIcons name="school" size={26} color="#fff" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.obsTitle}>Öğrenci Bilgi Sistemi</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.obsTitle}>Öğrenci Bilgi Sistemi</Text>
+              {unseenCount > 0 ? (
+                <Pill label={`${unseenCount} YENİ`} color={C.accentDark} bg={C.accentBg} />
+              ) : null}
+            </View>
             <Text style={styles.obsSub} numberOfLines={2}>
               {obsStudent
                 ? `${obsStudent.fullName} · ${obsStudent.department || obsStudent.faculty}`
@@ -145,7 +167,19 @@ export default function UniversityScreen() {
         </View>
 
         {/* Yemek menüsü */}
-        <SectionTitle title="Günün Menüsü" subtitle={menu?.date || 'Fırat Üniversitesi yemekhanesi'} />
+        <SectionTitle
+          title="Günün Menüsü"
+          subtitle={
+            menu?.date
+              ? `${menu.date}${diningAt ? ` · ${formatLastUpdated(diningAt)}` : ''}`
+              : 'Fırat Üniversitesi yemekhanesi'
+          }
+        />
+        {diningStale && (
+          <View style={{ marginBottom: 8 }}>
+            <Notice tone="info" text={`Çevrimdışı — son güncelleme ${formatLastUpdated(diningAt)}`} />
+          </View>
+        )}
         <Card style={styles.pad}>
           {loading ? (
             <LoadingState label="Menü alınıyor..." tint={RED} />
@@ -229,7 +263,7 @@ export default function UniversityScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
   hero: { backgroundColor: RED, paddingHorizontal: Theme.spacing.lg, paddingTop: 10, paddingBottom: 18, flexDirection: 'row', alignItems: 'center', gap: 12 },
   heroKicker: { color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
@@ -237,17 +271,17 @@ const styles = StyleSheet.create({
   heroBadge: { width: 46, height: 46, borderRadius: 16, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   content: { paddingBottom: 16 },
   pad: { marginHorizontal: Theme.spacing.lg },
-  obsCard: { margin: Theme.spacing.lg, marginBottom: 8, backgroundColor: '#fff', borderRadius: Theme.radius.lg, borderWidth: 1, borderColor: C.uniBorder, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, ...Theme.shadows.md },
+  obsCard: { margin: Theme.spacing.lg, marginBottom: 8, backgroundColor: C.surface, borderRadius: Theme.radius.lg, borderWidth: 1, borderColor: C.uniBorder, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, ...Theme.shadows.md },
   obsIcon: { width: 50, height: 50, borderRadius: 16, backgroundColor: RED, alignItems: 'center', justifyContent: 'center' },
   obsTitle: { ...Theme.text.h3, color: C.textPrimary },
   obsSub: { ...Theme.text.small, color: C.uniMuted, marginTop: 2 },
   obsArrow: { width: 34, height: 34, borderRadius: 12, backgroundColor: C.uniRedSoft, alignItems: 'center', justifyContent: 'center' },
   quickRow: { flexDirection: 'row', paddingHorizontal: Theme.spacing.lg, gap: 10 },
   quick: { flex: 1, alignItems: 'center', gap: 6 },
-  quickIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: '#fff', borderWidth: 1, borderColor: C.uniBorder, alignItems: 'center', justifyContent: 'center' },
+  quickIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: C.surface, borderWidth: 1, borderColor: C.uniBorder, alignItems: 'center', justifyContent: 'center' },
   quickText: { fontSize: 11, fontWeight: '700', color: C.textSecondary },
   chips: { paddingHorizontal: Theme.spacing.lg, gap: 8, paddingBottom: 12 },
   annTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 8 },
   annDate: { ...Theme.text.small, color: C.textMuted },
   annTitle: { ...Theme.text.body, color: C.textPrimary, fontWeight: '700', lineHeight: 20 },
-});
+}));

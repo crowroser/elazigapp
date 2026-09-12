@@ -14,11 +14,11 @@ import {
   ScrollView,
   Linking,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import NfcManager, { NfcTech } from 'react-native-nfc-manager';
-import * as Location from 'expo-location';
-import { Theme } from '../constants/Theme';
-import { ApiService, CardBalanceResult, FillingCenter } from '../services/apiService';
+import { Theme, themedStyles } from '../constants/Theme';
+import { ApiService, CardBalanceResult } from '../services/apiService';
 
 interface CardQueryModalProps {
   visible: boolean;
@@ -28,25 +28,13 @@ interface CardQueryModalProps {
   onSuccess?: (result: CardBalanceResult, cardNo: string) => void;
 }
 
-function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-}
-
-function formatKm(km: number): string {
-  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
-}
-
 export const CardQueryModal: React.FC<CardQueryModalProps> = ({
   visible,
   onClose,
   initialCardNo,
   onSuccess,
 }) => {
+  const router = useRouter();
   const [cardNumber, setCardNumber] = useState(initialCardNo || '');
 
   useEffect(() => {
@@ -57,54 +45,6 @@ export const CardQueryModal: React.FC<CardQueryModalProps> = ({
   const [result, setResult] = useState<CardBalanceResult | null>(null);
   const [isNfcScanning, setIsNfcScanning] = useState(false);
   const [nfcSupported, setNfcSupported] = useState<boolean | null>(null);
-
-  // Kart yükleme noktaları (GET /api/fillingcenter/list)
-  const [showCenters, setShowCenters] = useState(false);
-  const [centers, setCenters] = useState<FillingCenter[]>([]);
-  const [centersLoading, setCentersLoading] = useState(false);
-  const [centersError, setCentersError] = useState('');
-  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
-
-  const toggleCenters = async () => {
-    const next = !showCenters;
-    setShowCenters(next);
-    if (!next || centers.length > 0 || centersLoading) return;
-
-    setCentersLoading(true);
-    setCentersError('');
-    try {
-      const [list, loc] = await Promise.all([
-        ApiService.getFillingCenters(),
-        (async () => {
-          try {
-            const { status } = await Location.getForegroundPermissionsAsync();
-            if (status !== 'granted') return null;
-            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-            return { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          } catch {
-            return null;
-          }
-        })(),
-      ]);
-      setCenters(list);
-      setUserLoc(loc);
-      if (list.length === 0) setCentersError('Bayi listesi alınamadı.');
-    } catch {
-      setCentersError('Bayi listesi alınamadı.');
-    } finally {
-      setCentersLoading(false);
-    }
-  };
-
-  const sortedCenters = React.useMemo(() => {
-    const withDist = centers.map((c) => ({
-      ...c,
-      distance: userLoc ? distanceKm(userLoc.lat, userLoc.lng, c.lat, c.lng) : null,
-    }));
-    if (userLoc) withDist.sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999));
-    else withDist.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
-    return withDist;
-  }, [centers, userLoc]);
 
   useEffect(() => {
     // NFC Desteği kontrolü
@@ -330,56 +270,27 @@ export const CardQueryModal: React.FC<CardQueryModalProps> = ({
                   </Text>
                 </View>
 
-                {/* Kart Yükleme Noktaları / Bayiler */}
-                <TouchableOpacity style={styles.centersToggle} onPress={toggleCenters} activeOpacity={0.8}>
-                  <MaterialCommunityIcons name="store-marker-outline" size={18} color={Theme.colors.primary} />
-                  <Text style={styles.centersToggleText}>
-                    Kart Yükleme Noktaları{centers.length > 0 ? ` (${centers.length})` : ''}
-                  </Text>
-                  <Ionicons name={showCenters ? 'chevron-up' : 'chevron-down'} size={16} color={Theme.colors.textMuted} />
-                </TouchableOpacity>
-
-                {showCenters && (
-                  <View style={styles.centersBox}>
-                    {centersLoading ? (
-                      <View style={styles.centersLoading}>
-                        <ActivityIndicator size="small" color={Theme.colors.primary} />
-                        <Text style={styles.centersHint}>Bayiler yükleniyor...</Text>
-                      </View>
-                    ) : centersError ? (
-                      <Text style={styles.centersHint}>{centersError}</Text>
-                    ) : (
-                      <>
-                        <Text style={styles.centersHint}>
-                          {userLoc ? 'Size en yakın noktalar' : 'Konum izni yok — alfabetik liste'}
-                        </Text>
-                        <ScrollView style={styles.centersScroll} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                          {sortedCenters.slice(0, userLoc ? 10 : sortedCenters.length).map((c) => (
-                            <TouchableOpacity
-                              key={`fc-${c.id}`}
-                              style={styles.centerRow}
-                              activeOpacity={0.75}
-                              onPress={() => Linking.openURL(`https://www.google.com/maps?q=${c.lat},${c.lng}`)}
-                            >
-                              <View style={[styles.centerTypeBadge, c.tip === 'K' && styles.centerTypeBadgeKiosk]}>
-                                <Text style={styles.centerTypeText}>{c.tipLabel}</Text>
-                              </View>
-                              <View style={{ flex: 1 }}>
-                                <Text style={styles.centerName} numberOfLines={1}>{c.name}</Text>
-                                {c.address ? (
-                                  <Text style={styles.centerAddress} numberOfLines={1}>{c.address}</Text>
-                                ) : null}
-                              </View>
-                              <Text style={styles.centerDistance}>
-                                {c.distance != null ? formatKm(c.distance) : 'Yol Tarifi'}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </ScrollView>
-                      </>
-                    )}
+                {/* Kart Yükleme Noktaları / Bayiler yönlendirmesi */}
+                <TouchableOpacity
+                  style={styles.centersLink}
+                  onPress={() => {
+                    onClose();
+                    router.push('/fillingcenters' as any);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.centersLinkIcon}>
+                    <MaterialCommunityIcons name="map-marker-radius-outline" size={22} color={Theme.colors.primary} />
                   </View>
-                )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.centersLinkTitle}>Kart Dolum Noktaları</Text>
+                    <Text style={styles.centersLinkSub}>Bayiler ve kiosklar haritada, konuma göre sıralı</Text>
+                  </View>
+                  <View style={styles.centersLinkBadge}>
+                    <Text style={styles.centersLinkBadgeText}>Haritada Gör</Text>
+                    <Ionicons name="chevron-forward" size={14} color={Theme.colors.primary} />
+                  </View>
+                </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.resultContainer}>
@@ -419,6 +330,19 @@ export const CardQueryModal: React.FC<CardQueryModalProps> = ({
                       ) : null}
                     </View>
 
+                    <TouchableOpacity
+                      style={styles.centersLinkResult}
+                      onPress={() => {
+                        onClose();
+                        router.push('/fillingcenters' as any);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialCommunityIcons name="map-marker-radius-outline" size={16} color={Theme.colors.primary} />
+                      <Text style={styles.centersLinkResultText}>En Yakın Dolum Noktalarını Haritada Gör</Text>
+                      <Ionicons name="chevron-forward" size={14} color={Theme.colors.primary} />
+                    </TouchableOpacity>
+
                     <TouchableOpacity style={styles.resetButton} onPress={handleReset} activeOpacity={0.8}>
                       <Ionicons name="refresh-outline" size={16} color={Theme.colors.primary} />
                       <Text style={styles.resetButtonText}>Başka Kart Sorgula</Text>
@@ -442,14 +366,14 @@ export const CardQueryModal: React.FC<CardQueryModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(10, 27, 51, 0.55)',
     justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: Theme.colors.surface,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 20,
@@ -666,81 +590,69 @@ const styles = StyleSheet.create({
     color: Theme.colors.primary,
     marginTop: 4,
   },
-  centersToggle: {
+  centersLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: Theme.colors.cardBorder,
+    backgroundColor: Theme.colors.surfaceSubtle,
+    marginTop: 12,
+  },
+  centersLinkIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Theme.colors.secondaryBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centersLinkTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Theme.colors.primary,
+  },
+  centersLinkSub: {
+    fontSize: 11,
+    color: Theme.colors.textMuted,
+    marginTop: 1,
+  },
+  centersLinkBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: Theme.colors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Theme.colors.cardBorder,
+  },
+  centersLinkBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Theme.colors.primary,
+  },
+  centersLinkResult: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: Theme.colors.successBg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
     marginTop: 10,
   },
-  centersToggleText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: Theme.colors.primary,
-  },
-  centersBox: {
-    marginTop: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-    padding: 8,
-  },
-  centersLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 6,
-  },
-  centersHint: {
-    fontSize: 11,
-    color: Theme.colors.textMuted,
-    marginBottom: 4,
-    paddingHorizontal: 4,
-  },
-  centersScroll: {
-    maxHeight: 220,
-  },
-  centerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Theme.colors.cardBorder,
-  },
-  centerTypeBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    backgroundColor: '#d6e3ff',
-  },
-  centerTypeBadgeKiosk: {
-    backgroundColor: '#ffedd5',
-  },
-  centerTypeText: {
-    fontSize: 10,
+  centersLinkResultText: {
+    fontSize: 12,
     fontWeight: '700',
-    color: Theme.colors.primary,
-  },
-  centerName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Theme.colors.textPrimary,
-  },
-  centerAddress: {
-    fontSize: 11,
-    color: Theme.colors.textMuted,
-  },
-  centerDistance: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Theme.colors.secondary,
+    color: '#15803d',
   },
   bakiyePending: {
     fontSize: 11,
@@ -802,5 +714,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
   },
-});
+}));
 

@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, TextInput, Modal, StatusBar, Linking, Share, RefreshControl, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Theme } from '../../constants/Theme';
+import { Theme, themedStyles, useAppTheme } from '../../constants/Theme';
 import { ApiService, NewsItem } from '../../services/apiService';
 import { EventsService, CityEvent, EventTag, EVENT_TAGS, EventSession, SuperTicketDeal } from '../../services/eventsService';
+import { PrefsService } from '../../services/prefsService';
+import { formatLastUpdated } from '../../services/cacheService';
 import { Card, Chip, EmptyState, LoadingState, Notice, Pill, PrimaryButton, ScreenHeader, SectionTitle } from '../../components/ui';
 
 const C = Theme.colors;
@@ -30,11 +32,14 @@ function timeLeft(ms: number) {
 }
 
 export default function DiscoverScreen() {
+  useAppTheme();
   const [segment, setSegment] = useState<'events' | 'news'>('events');
 
   // Haberler
   const [news, setNews] = useState<NewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
+  const [newsStale, setNewsStale] = useState(false);
+  const [newsAt, setNewsAt] = useState(0);
   const [newsCat, setNewsCat] = useState('Tümü');
   const [query, setQuery] = useState('');
   const [activeNews, setActiveNews] = useState<NewsItem | null>(null);
@@ -42,6 +47,8 @@ export default function DiscoverScreen() {
   // Etkinlikler
   const [events, setEvents] = useState<CityEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsStale, setEventsStale] = useState(false);
+  const [eventsAt, setEventsAt] = useState(0);
   const [eventsError, setEventsError] = useState('');
   const [tag, setTag] = useState<EventTag>('tumu');
   const [deals, setDeals] = useState<SuperTicketDeal[]>([]);
@@ -49,17 +56,41 @@ export default function DiscoverScreen() {
   const [sessions, setSessions] = useState<EventSession[] | null>(null);
   const [sessionsError, setSessionsError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [trackedSlugs, setTrackedSlugs] = useState<string[]>([]);
 
-  const loadNews = useCallback(async () => {
-    setNews(await ApiService.getNews());
-    setNewsLoading(false);
+  const handleToggleTrack = async (e: CityEvent) => {
+    const isNowTracked = await PrefsService.toggleTrackEvent({
+      slug: e.slug,
+      title: e.title,
+      link: e.link,
+      lastPrice: e.price,
+      lastRemaining: null,
+      trackedAt: new Date().toISOString(),
+    });
+    setTrackedSlugs((prev) => (isNowTracked ? [...prev, e.slug] : prev.filter((s) => s !== e.slug)));
+  };
+
+  const loadNews = useCallback(async (force = false) => {
+    try {
+      const res = await ApiService.getNewsWithCache(force);
+      setNews(res.data);
+      setNewsStale(res.stale);
+      setNewsAt(res.at);
+    } catch {
+      // fallback
+    } finally {
+      setNewsLoading(false);
+    }
   }, []);
 
   const loadEvents = useCallback(async (t: EventTag, force = false) => {
     setEventsLoading(true);
     setEventsError('');
     try {
-      setEvents(await EventsService.getEvents(t, force));
+      const res = await EventsService.getEventsWithCache(t, force);
+      setEvents(res.data);
+      setEventsStale(res.stale);
+      setEventsAt(res.at);
     } catch (e: any) {
       setEventsError(e?.message || 'Etkinlikler alınamadı.');
     } finally {
@@ -71,11 +102,17 @@ export default function DiscoverScreen() {
     loadNews();
     loadEvents('tumu');
     EventsService.getSuperTickets().then(setDeals);
+    PrefsService.getTrackedEvents().then((list) => setTrackedSlugs(list.map((e) => e.slug)));
   }, [loadNews, loadEvents]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadNews(), loadEvents(tag, true), EventsService.getSuperTickets().then(setDeals)]);
+    await Promise.all([
+      loadNews(true),
+      loadEvents(tag, true),
+      EventsService.getSuperTickets().then(setDeals),
+      PrefsService.getTrackedEvents().then((list) => setTrackedSlugs(list.map((e) => e.slug))),
+    ]);
     setRefreshing(false);
   };
 
@@ -126,8 +163,8 @@ export default function DiscoverScreen() {
         </>
       ) : null}
 
-      <SectionTitle title="Elazığ Etkinlikleri" subtitle="Bubilet · canlı bilet durumu" />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} style={{ flexGrow: 0 }}>
+      <SectionTitle title="Etkinlik Takvimi" subtitle="Bubilet üzerinden Elazığ" style={{ marginTop: deals.length ? 16 : 8 }} />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
         {EVENT_TAGS.map((t) => (
           <Chip key={t.id} label={t.label} icon={t.icon} active={tag === t.id} onPress={() => { setTag(t.id); loadEvents(t.id); }} />
         ))}
@@ -147,9 +184,26 @@ export default function DiscoverScreen() {
         <View style={styles.grid}>
           {events.map((e) => {
             const deal = dealFor(e);
+            const isTracked = trackedSlugs.includes(e.slug);
             return (
               <TouchableOpacity key={e.slug} style={styles.eventCard} activeOpacity={0.9} onPress={() => openEvent(e)}>
-                {e.image ? <Image source={{ uri: e.image }} style={styles.eventImg} /> : <View style={[styles.eventImg, { backgroundColor: C.surfaceVariant }]} />}
+                <View style={{ position: 'relative' }}>
+                  {e.image ? <Image source={{ uri: e.image }} style={styles.eventImg} /> : <View style={[styles.eventImg, { backgroundColor: C.surfaceVariant }]} />}
+                  <TouchableOpacity
+                    style={styles.eventHeart}
+                    hitSlop={8}
+                    onPress={(ev) => {
+                      ev.stopPropagation();
+                      handleToggleTrack(e);
+                    }}
+                  >
+                    <Ionicons
+                      name={isTracked ? 'heart' : 'heart-outline'}
+                      size={18}
+                      color={isTracked ? C.danger : '#fff'}
+                    />
+                  </TouchableOpacity>
+                </View>
                 {deal ? (
                   <View style={styles.eventDeal}>
                     <Text style={styles.eventDealText}>%{deal.discountRate}</Text>
@@ -230,8 +284,18 @@ export default function DiscoverScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.background} />
+      <StatusBar barStyle={Theme.colors.statusBar} backgroundColor={C.background} />
       <ScreenHeader title="Keşfet" subtitle="Etkinlikler ve şehir haberleri" />
+      {segment === 'events' && eventsStale && (
+        <View style={{ paddingHorizontal: Theme.spacing.lg, paddingTop: 4 }}>
+          <Notice tone="info" text={`Çevrimdışı — son güncelleme ${formatLastUpdated(eventsAt)}`} />
+        </View>
+      )}
+      {segment === 'news' && newsStale && (
+        <View style={{ paddingHorizontal: Theme.spacing.lg, paddingTop: 4 }}>
+          <Notice tone="info" text={`Çevrimdışı — son güncelleme ${formatLastUpdated(newsAt)}`} />
+        </View>
+      )}
       <View style={styles.segment}>
         {(['events', 'news'] as const).map((s) => (
           <TouchableOpacity key={s} style={[styles.segBtn, segment === s && styles.segBtnActive]} onPress={() => setSegment(s)} activeOpacity={0.85}>
@@ -250,7 +314,23 @@ export default function DiscoverScreen() {
       <Modal visible={!!activeEvent} animationType="slide" onRequestClose={() => setActiveEvent(null)}>
         {activeEvent ? (
           <SafeAreaView style={styles.safe} edges={['top']}>
-            <ScreenHeader title="Etkinlik" subtitle="Bubilet" onBack={() => setActiveEvent(null)} />
+            <ScreenHeader
+              title="Etkinlik"
+              subtitle="Bubilet · Elazığ"
+              onBack={() => setActiveEvent(null)}
+              right={
+                <TouchableOpacity
+                  onPress={() => handleToggleTrack(activeEvent)}
+                  style={styles.iconBtn}
+                >
+                  <Ionicons
+                    name={trackedSlugs.includes(activeEvent.slug) ? 'heart' : 'heart-outline'}
+                    size={20}
+                    color={trackedSlugs.includes(activeEvent.slug) ? C.danger : C.primary}
+                  />
+                </TouchableOpacity>
+              }
+            />
             <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
               {activeEvent.image ? <Image source={{ uri: activeEvent.image }} style={styles.detailImg} /> : null}
               <View style={[styles.pad, { gap: 12, marginTop: 14 }]}>
@@ -339,7 +419,7 @@ export default function DiscoverScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
   content: { paddingBottom: 16 },
   pad: { marginHorizontal: Theme.spacing.lg },
@@ -364,6 +444,18 @@ const styles = StyleSheet.create({
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: Theme.spacing.lg },
   eventCard: { width: CARD_W, backgroundColor: C.surface, borderRadius: Theme.radius.lg, borderWidth: 1, borderColor: C.cardBorder, overflow: 'hidden', ...Theme.shadows.sm },
+  eventHeart: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
   eventImg: { width: '100%', height: CARD_W * 0.625, backgroundColor: C.surfaceSubtle },
   eventDeal: { position: 'absolute', top: 8, left: 8, backgroundColor: C.danger, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7 },
   eventDealText: { color: '#fff', fontSize: 10, fontWeight: '800' },
@@ -389,4 +481,4 @@ const styles = StyleSheet.create({
   detailBody: { ...Theme.text.body, color: C.textSecondary, lineHeight: 22 },
   sessionDate: { ...Theme.text.body, color: C.textPrimary, fontWeight: '700', flex: 1 },
   sessionPrice: { fontSize: 18, fontWeight: '800', color: C.primary },
-});
+}));

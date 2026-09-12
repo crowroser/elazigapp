@@ -7,11 +7,28 @@ service cloud.firestore {
     }
 
     // Kampüs ilan panosu: herkes okur, giriş yapmış kullanıcı ilan verir,
-    // yalnızca ilan sahibi (ownerId) günceller/siler
+    // yalnızca ilan sahibi (ownerId) günceller/siler.
+    // İstisna: giriş yapmış herhangi bir kullanıcı yalnızca reportCount alanını 1 artırabilir (şikayet).
     match /classifieds/{postId} {
       allow read: if true;
       allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      allow update: if request.auth != null && (
+        resource.data.ownerId == request.auth.uid ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount']) &&
+          request.resource.data.reportCount == resource.data.get('reportCount', 0) + 1
+        )
+      );
+    }
+
+    // Şikayetler: belge kimliği "{ilanId}_{uid}" olmak zorunda (kullanıcı başına tek şikayet),
+    // yalnızca oluşturulur; okuma/silme uygulama tarafında yok (moderasyon konsoldan yapılır)
+    match /reports/{reportId} {
+      allow create: if request.auth != null &&
+        request.resource.data.reporterId == request.auth.uid &&
+        reportId == request.resource.data.classifiedId + '_' + request.auth.uid;
+      allow read, update, delete: if false;
     }
 
     match /{document=**} {

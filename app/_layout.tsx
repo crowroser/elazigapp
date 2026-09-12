@@ -1,11 +1,14 @@
 import { useFonts } from 'expo-font';
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Theme } from '@/constants/Theme';
+import * as Notifications from 'expo-notifications';
+import { Theme, ThemeService, useAppTheme } from '@/constants/Theme';
+import { NotificationService } from '@/services/notificationService';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -18,19 +21,26 @@ export const unstable_settings = {
 
 SplashScreen.preventAutoHideAsync();
 
-const AppNavTheme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: Theme.colors.primary,
-    background: Theme.colors.background,
-    card: Theme.colors.surface,
-    text: Theme.colors.textPrimary,
-    border: Theme.colors.cardBorder,
-  },
-};
+/** Navigasyon teması: canlı Theme.colors'tan her render'da üretilir (koyu/açık) */
+function navTheme() {
+  const base = Theme.colors.isDark ? DarkTheme : DefaultTheme;
+  return {
+    ...base,
+    colors: {
+      ...base.colors,
+      primary: Theme.colors.primary,
+      background: Theme.colors.background,
+      card: Theme.colors.surface,
+      text: Theme.colors.textPrimary,
+      border: Theme.colors.cardBorder,
+    },
+  };
+}
 
 export default function RootLayout() {
+  useAppTheme();
+  const router = useRouter();
+  const [themeReady, setThemeReady] = useState(false);
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
@@ -40,14 +50,46 @@ export default function RootLayout() {
   }, [error]);
 
   useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
-  }, [loaded]);
+    // Kayıtlı tema tercihi ilk kareden önce uygulanır (açık→koyu yanıp sönmesin)
+    ThemeService.init().finally(() => setThemeReady(true));
+  }, []);
 
-  if (!loaded) return null;
+  useEffect(() => {
+    if (loaded && themeReady) SplashScreen.hideAsync();
+  }, [loaded, themeReady]);
+
+  useEffect(() => {
+    // Initial sync
+    NotificationService.syncAllSchedules().catch(() => {});
+
+    // Periodic sync on app active
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        NotificationService.syncAllSchedules().catch(() => {});
+      }
+    });
+
+    // Notification click navigation
+    const notifSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const route = response.notification.request.content.data?.route;
+      if (route && typeof route === 'string') {
+        try {
+          router.push(route as any);
+        } catch {}
+      }
+    });
+
+    return () => {
+      appStateSub.remove();
+      notifSub.remove();
+    };
+  }, [router]);
+
+  if (!loaded || !themeReady) return null;
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={AppNavTheme}>
+      <ThemeProvider value={navTheme()}>
         <Stack
           screenOptions={{
             headerStyle: { backgroundColor: Theme.colors.surface },
@@ -64,6 +106,8 @@ export default function RootLayout() {
           <Stack.Screen name="widgets" options={{ title: 'Widget Önizleme' }} />
           <Stack.Screen name="classifieds" options={{ title: 'İlan Panosu' }} />
           <Stack.Screen name="assistant" options={{ title: 'Gakgoş Asistan' }} />
+          <Stack.Screen name="fillingcenters" options={{ headerShown: false }} />
+          <Stack.Screen name="trip_planner" options={{ headerShown: false }} />
         </Stack>
       </ThemeProvider>
     </SafeAreaProvider>

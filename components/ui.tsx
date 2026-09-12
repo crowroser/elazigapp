@@ -10,7 +10,7 @@ import {
   StyleProp,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Theme } from '../constants/Theme';
+import { Theme, themedStyles, useAppTheme } from '../constants/Theme';
 
 const C = Theme.colors;
 
@@ -136,6 +136,7 @@ export function IconCircle({
   color?: string;
   bg?: string;
 }) {
+  useAppTheme();
   const Icon: any = lib === 'ion' ? Ionicons : MaterialCommunityIcons;
   return (
     <View style={{ width: size, height: size, borderRadius: size * 0.32, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
@@ -388,7 +389,7 @@ export const textStyles: Record<string, TextStyle> = {
   muted: { ...Theme.text.small, color: C.textMuted },
 };
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -485,4 +486,4 @@ const styles = StyleSheet.create({
 
   notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: Theme.radius.md },
   noticeText: { flex: 1, fontSize: 12, fontWeight: '600', lineHeight: 17 },
-});
+}));

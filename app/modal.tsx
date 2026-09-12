@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import { themedStyles } from '../constants/Theme';
 import { Platform, StyleSheet, View, Text, Linking } from 'react-native';
 import Constants from 'expo-constants';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -26,9 +27,9 @@ export default function ModalScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   container: { flex: 1, alignItems: 'center', padding: 24, backgroundColor: C.background },
   logo: { width: 84, height: 84, borderRadius: 26, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', marginTop: 12, ...Theme.shadows.md },
   title: { ...Theme.text.display, color: C.textPrimary, marginTop: 14 },
   subtitle: { ...Theme.text.small, color: C.textMuted, textAlign: 'center', lineHeight: 18, marginTop: 6, paddingHorizontal: 12 },
-});
+}));

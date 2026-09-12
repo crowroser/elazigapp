@@ -3,8 +3,9 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Linkin
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Theme } from '../../constants/Theme';
+import { Theme, themedStyles, useAppTheme } from '../../constants/Theme';
 import { ApiService, Pharmacy, OutageItem } from '../../services/apiService';
+import { formatLastUpdated } from '../../services/cacheService';
 import { PrayerCard } from '../../components/PrayerCard';
 import { Card, EmptyState, IconCircle, LoadingState, Notice, Pill, PrimaryButton, ScreenHeader, SectionTitle } from '../../components/ui';
 
@@ -21,16 +22,24 @@ const DIRECTORY = [
 ];
 
 export default function ServicesScreen() {
+  useAppTheme();
   const router = useRouter();
   const [tab, setTab] = useState<TabKey>('pharmacy');
   const [pharmacies, setPharmacies] = useState<Pharmacy[]>([]);
+  const [pharmaciesStale, setPharmaciesStale] = useState(false);
+  const [pharmaciesAt, setPharmaciesAt] = useState(0);
   const [outages, setOutages] = useState<OutageItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    const [p, o] = await Promise.all([ApiService.getPharmacies(), ApiService.getOutages()]);
-    setPharmacies(p);
+  const load = useCallback(async (force = false) => {
+    const [pRes, o] = await Promise.all([
+      ApiService.getPharmaciesWithCache(force).catch(() => ({ data: [], stale: true, at: 0 })),
+      ApiService.getOutages(),
+    ]);
+    setPharmacies(pRes.data);
+    setPharmaciesStale(pRes.stale);
+    setPharmaciesAt(pRes.at);
     setOutages(o);
     setLoading(false);
   }, []);
@@ -41,7 +50,7 @@ export default function ServicesScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load(true);
     setRefreshing(false);
   };
 
@@ -57,7 +66,7 @@ export default function ServicesScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.background} />
+      <StatusBar barStyle={Theme.colors.statusBar} backgroundColor={C.background} />
       <ScreenHeader
         title="Hizmetler"
         subtitle="Nöbetçi eczane, kesintiler, önemli numaralar"
@@ -67,6 +76,11 @@ export default function ServicesScreen() {
           </TouchableOpacity>
         }
       />
+      {tab === 'pharmacy' && pharmaciesStale && (
+        <View style={{ paddingHorizontal: Theme.spacing.lg, paddingTop: 4 }}>
+          <Notice tone="info" text={`Çevrimdışı — son güncelleme ${formatLastUpdated(pharmaciesAt)}`} />
+        </View>
+      )}
 
       <View style={styles.segment}>
         {TABS.map((t) => {
@@ -86,7 +100,11 @@ export default function ServicesScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} tintColor={C.primary} />}>
         {tab === 'pharmacy' ? (
           <View style={styles.section}>
-            <SectionTitle title="Bugün Nöbetçi Eczaneler" subtitle="Elazığ Belediyesi listesi" style={styles.sectionTitle} />
+            <SectionTitle
+              title="Bugün Nöbetçi Eczaneler"
+              subtitle={pharmaciesAt ? `Elazığ Belediyesi listesi · ${formatLastUpdated(pharmaciesAt)}` : 'Elazığ Belediyesi listesi'}
+              style={styles.sectionTitle}
+            />
             {loading ? (
               <LoadingState label="Eczaneler alınıyor..." />
             ) : pharmacies.length === 0 ? (
@@ -172,7 +190,7 @@ export default function ServicesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
   iconBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.cardBorder, alignItems: 'center', justifyContent: 'center' },
   segment: { flexDirection: 'row', marginHorizontal: Theme.spacing.lg, backgroundColor: C.surface, borderRadius: Theme.radius.md, borderWidth: 1, borderColor: C.cardBorder, padding: 4, gap: 4 },
@@ -193,4 +211,4 @@ const styles = StyleSheet.create({
   dirName: { ...Theme.text.h3, color: C.textPrimary, marginTop: 6 },
   dirSub: { fontSize: 11, color: C.textMuted },
   dirPhone: { fontSize: 14, fontWeight: '800', color: C.primary, marginTop: 2 },
-});
+}));

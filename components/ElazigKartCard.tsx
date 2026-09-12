@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { Theme } from '../constants/Theme';
+import { Theme, themedStyles } from '../constants/Theme';
 
 const C = Theme.colors;
 
@@ -83,7 +83,7 @@ export const ElazigKartCard: React.FC<ElazigKartCardProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => StyleSheet.create({
   card: {
     marginHorizontal: Theme.spacing.lg,
     borderRadius: Theme.radius.xl,
@@ -111,4 +111,4 @@ const styles = StyleSheet.create({
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12 },
   actionBtnGhost: { backgroundColor: 'rgba(255,255,255,0.16)' },
   actionText: { color: C.primary, fontSize: 12, fontWeight: '800' },
-});
+}));

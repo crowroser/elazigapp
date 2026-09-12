@@ -1,4 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
+import { cached, CACHE_TTL, CachedResult } from './cacheService';
+
+export type { CachedResult };
 
 export interface WeatherData {
   tempC: number;
@@ -54,6 +57,25 @@ export interface RouteStopItem {
   latitude: number;
   longitude: number;
   direction: string;
+}
+
+/** Bir hattın tek yön varyantındaki sıralı duraklar (rota planlayıcı ağı) */
+export interface RouteVariantStops {
+  variantId: number;
+  /** 'G' (Gidiş) | 'D' (Dönüş) | sunucudaki diğer varyant kodları */
+  direction: string;
+  title: string;
+  stops: RouteStopItem[];
+  /** Sunucuda olmayan, gidiş dizilimi ters çevrilerek türetilmiş dönüş yönü (rota planlayıcı) */
+  inferred?: boolean;
+}
+
+export interface TransitNetworkRoute {
+  id: number;
+  kod: string;
+  hatNo: number;
+  aciklama: string;
+  variants: RouteVariantStops[];
 }
 
 export interface RoutePriceItem {
@@ -342,6 +364,7 @@ async function fetchElazigKartJson(path: string, retryCount = 1): Promise<any> {
 // Hat kodu → sunucu id ve varyant önbelleği (her hat için tekrar tekrar sorgu atmamak için)
 let routeCatalogCache: RouteLineItem[] = [];
 const routeVariantsCache = new Map<number, RouteVariantItem[]>();
+let transitNetworkInFlight: Promise<TransitNetworkRoute[]> | null = null;
 
 function normalizeRouteKey(value: string): string {
   return (value || '')
@@ -427,6 +450,30 @@ function mapVehicle(v: any, fallbackRouteCode: string): RealtimeBusInfo | null {
     validatorNo: v.validatorNo,
     editDate: v.editDate || new Date().toISOString(),
   };
+}
+
+export function mapStation(st: any): BusStation {
+  const stationId = String(st.id ?? st.stationId ?? st.stopNo);
+  return {
+    id: stationId,
+    name: fixMojibake(st.stopTitle || st.title || st.shortTitle || st.description || `Durak ${stationId}`).trim(),
+    code: String(st.stopNo || stationId),
+    direction: fixMojibake(st.stopKindTitle || st.address || ''),
+    lat: parseFloat(st.latitude),
+    lng: parseFloat(st.longitude),
+    lines: [],
+  };
+}
+
+export function isValidStation(st: any): boolean {
+  if (!st) return false;
+  const lat = parseFloat(st.latitude);
+  const lon = parseFloat(st.longitude);
+  if (isNaN(lat) || isNaN(lon) || lat === 0 || lon === 0) return false;
+  // Elazığ il sınırları koordinat filtresi (test/hatalı kayıtları eler)
+  if (lat < 38.4 || lat > 38.9 || lon < 39.0 || lon > 39.5) return false;
+  const name = fixMojibake(st.stopTitle || st.title || st.shortTitle || st.description || '').trim();
+  return name.length > 0 && !name.toLowerCase().includes('test');
 }
 
 async function fetchHtmlWithCorsProxy(targetUrl: string): Promise<string> {
@@ -667,14 +714,35 @@ export const ApiService = {
   },
 
   /**
-   * CANLI TÜM HAT LİSTESİ (GET /api/wheremybus/routes)
+   * CANLI TÜM HAT LİSTESİ (GET /api/wheremybus/routes) - 24 saat çevrimdışı önbellek
    */
-  async getAllRoutes(keyword = ''): Promise<RouteLineItem[]> {
+  async getAllRoutes(keyword = '', force = false): Promise<RouteLineItem[]> {
+    // Sözleşme: asla fırlatmaz — ağ yok ve önbellek boşsa [] döner
+    let res: CachedResult<RouteLineItem[]>;
     try {
-      if (routeCatalogCache.length === 0) {
+      res = await this.getAllRoutesWithCache(force);
+    } catch (e) {
+      console.log('Tüm hatlar alınamadı:', e);
+      return [];
+    }
+    const q = normalizeRouteKey(keyword);
+    if (!q) return res.data;
+    return res.data.filter(
+      (r) =>
+        normalizeRouteKey(r.kod).includes(q) ||
+        normalizeRouteKey(r.aciklama).includes(q) ||
+        String(r.hatNo) === keyword.trim()
+    );
+  },
+
+  async getAllRoutesWithCache(force = false): Promise<CachedResult<RouteLineItem[]>> {
+    return cached(
+      'all_routes',
+      CACHE_TTL.ROUTES,
+      async () => {
         const data = await fetchElazigKartJson('/api/wheremybus/routes');
         const list: any[] = Array.isArray(data?.routes) ? data.routes : Array.isArray(data) ? data : [];
-        routeCatalogCache = list
+        const routes = list
           .map((item: any) => ({
             id: Number(item.id),
             kod: fixMojibake(item.routeCode || item.kod || '').trim(),
@@ -683,29 +751,57 @@ export const ApiService = {
           }))
           .filter((r: RouteLineItem) => r.kod.length > 0)
           .sort((a: RouteLineItem, b: RouteLineItem) => a.hatNo - b.hatNo);
-      }
-
-      const q = normalizeRouteKey(keyword);
-      if (!q) return routeCatalogCache;
-      return routeCatalogCache.filter(
-        (r) =>
-          normalizeRouteKey(r.kod).includes(q) ||
-          normalizeRouteKey(r.aciklama).includes(q) ||
-          String(r.hatNo) === keyword.trim()
-      );
-    } catch (e) {
-      console.log('Tüm hatlar canlı API hatası:', e);
-    }
-    return [];
+        routeCatalogCache = routes;
+        return routes;
+      },
+      { force }
+    );
   },
 
   /**
-   * CANLI OTOBÜS DURAKLARI (GET /api/smartstop/stations)
+   * CANLI OTOBÜS DURAKLARI (GET /api/smartstop/stations) - 24 saat çevrimdışı önbellek
    */
-  async getBusStations(): Promise<BusStation[]> {
+  async getBusStations(force = false): Promise<BusStation[]> {
     try {
-      const data = await fetchElazigKartJson('/api/smartstop/stations');
-      const stationsList: any[] = Array.isArray(data?.station)
+      return (await this.getBusStationsWithCache(force)).data;
+    } catch (e) {
+      console.log('Duraklar alınamadı:', e);
+      return [];
+    }
+  },
+
+  async getBusStationsWithCache(force = false): Promise<CachedResult<BusStation[]>> {
+    return cached(
+      'bus_stations',
+      CACHE_TTL.STATIONS,
+      async () => {
+        const data = await fetchElazigKartJson('/api/smartstop/stations');
+        const stationsList: any[] = Array.isArray(data?.station)
+          ? data.station
+          : Array.isArray(data?.stations)
+          ? data.stations
+          : Array.isArray(data)
+          ? data
+          : [];
+
+        return stationsList
+          .filter(isValidStation)
+          .map(mapStation);
+      },
+      { force }
+    );
+  },
+
+  /**
+   * YAKINIMDAKİ OTOBÜS DURAKLARI (GET /api/smartstop/near?lat={lat}&lng={lng})
+   */
+  async getNearbyStations(lat: number, lng: number): Promise<BusStation[]> {
+    try {
+      if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+        return [];
+      }
+      const data = await fetchElazigKartJson(`/api/smartstop/near?lat=${lat}&lng=${lng}`);
+      const list: any[] = Array.isArray(data?.station)
         ? data.station
         : Array.isArray(data?.stations)
         ? data.stations
@@ -713,33 +809,13 @@ export const ApiService = {
         ? data
         : [];
 
-      return stationsList
-        .filter((st: any) => {
-          const lat = parseFloat(st.latitude);
-          const lon = parseFloat(st.longitude);
-          if (isNaN(lat) || isNaN(lon) || lat === 0 || lon === 0) return false;
-          // Elazığ il sınırları koordinat filtresi (test/hatalı kayıtları eler)
-          if (lat < 38.4 || lat > 38.9 || lon < 39.0 || lon > 39.5) return false;
-          const name = fixMojibake(st.stopTitle || st.title || st.shortTitle || st.description || '').trim();
-          return name.length > 0 && !name.toLowerCase().includes('test');
-        })
-        .map((st: any) => {
-          const stationId = String(st.id ?? st.stationId ?? st.stopNo);
-          return {
-            id: stationId,
-            name: fixMojibake(st.stopTitle || st.title || st.shortTitle || st.description || `Durak ${stationId}`).trim(),
-            code: String(st.stopNo || stationId),
-            direction: fixMojibake(st.stopKindTitle || st.address || ''),
-            lat: parseFloat(st.latitude),
-            lng: parseFloat(st.longitude),
-            lines: [],
-          };
-        });
+      return list
+        .filter(isValidStation)
+        .map(mapStation);
     } catch (e) {
-      console.log('Durak API canlı istek hatası:', e);
+      console.log('Yakındaki duraklar API hatası:', e);
+      return [];
     }
-
-    return [];
   },
 
   /**
@@ -811,6 +887,84 @@ export const ApiService = {
   },
 
   /**
+   * TÜM HAT AĞI (rota planlayıcı): her hattın yön varyantları ve sıralı durakları.
+   * Hat başına 7 gün önbellek; ilk kurulumda ~45 hat × (variants + stations) isteği atılır (~30 sn),
+   * sonrasında tamamen yerel çalışır. Alınamayan hatlar atlanır (bir sonraki çağrıda yeniden denenir).
+   */
+  async getTransitNetwork(onProgress?: (done: number, total: number) => void): Promise<TransitNetworkRoute[]> {
+    // Aynı anda gelen çağrılar (ekran ısıtma + "Rota Bul") tek indirmeyi paylaşır
+    if (transitNetworkInFlight) return transitNetworkInFlight;
+    transitNetworkInFlight = this.buildTransitNetwork(onProgress).finally(() => {
+      transitNetworkInFlight = null;
+    });
+    return transitNetworkInFlight;
+  },
+
+  async buildTransitNetwork(onProgress?: (done: number, total: number) => void): Promise<TransitNetworkRoute[]> {
+    const routes = await this.getAllRoutes();
+    const out: TransitNetworkRoute[] = [];
+    let done = 0;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < routes.length) {
+        const r = routes[cursor++];
+        // Tek duraklı yer tutucu kayıtlar (ör. "ESKİ CEZAEVİ" tek durak) ağa alınmaz
+        const variants = (await this.getRouteVariantStops(r)).filter((v) => v.stops.length >= 2);
+        if (variants.length > 0) out.push({ id: r.id!, kod: r.kod, hatNo: r.hatNo, aciklama: r.aciklama, variants });
+        done++;
+        onProgress?.(done, routes.length);
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    return out.sort((a, b) => a.hatNo - b.hatNo);
+  },
+
+  /**
+   * HAT DURAK AĞI: her yön varyantının sıralı durak listesi
+   * (variants/{routeId} → stations/{variantId}); 7 gün önbellek. Rota planlayıcı bunun üzerinde arama yapar.
+   */
+  async getRouteVariantStops(routeCodeOrItem: string | RouteLineItem): Promise<RouteVariantStops[]> {
+    try {
+      const route = typeof routeCodeOrItem === 'string' ? await resolveRoute(routeCodeOrItem) : routeCodeOrItem;
+      if (!route || !route.id) return [];
+      const res = await cached(
+        `route_stops_${route.id}`,
+        CACHE_TTL.ROUTE_STOPS,
+        async () => {
+          const variants = await getRouteVariants(route.id!);
+          const out: RouteVariantStops[] = [];
+          for (const v of variants) {
+            const statData = await fetchElazigKartJson(`/api/wheremybus/stations/${v.id}`);
+            const rawStops: any[] = Array.isArray(statData?.routeVariantStops?.[0]?.station)
+              ? statData.routeVariantStops[0].station
+              : Array.isArray(statData?.station)
+              ? statData.station
+              : [];
+            const dir = v.routeVariantCode || (v.directionTypeTitle === 'Dönüş' ? 'D' : 'G');
+            const stops: RouteStopItem[] = rawStops
+              .map((s: any) => ({
+                stopId: Number(s.stopId ?? s.stationId ?? s.id ?? 0),
+                stopName: fixMojibake(s.stopTitle || s.stationName || s.stopName || s.title || '').trim(),
+                sequence: Number(s.rowNo ?? s.sequence ?? 0),
+                latitude: parseFloat(s.latitude || 0),
+                longitude: parseFloat(s.longitude || 0),
+                direction: dir,
+              }))
+              .filter((s) => s.latitude !== 0 && s.longitude !== 0)
+              .sort((a, b) => a.sequence - b.sequence);
+            if (stops.length > 0) out.push({ variantId: v.id, direction: dir, title: v.title, stops });
+          }
+          return out;
+        }
+      );
+      return res.data;
+    } catch (e) {
+      console.log('Hat durak ağı alınamadı:', e);
+      return [];
+    }
+  },
+
+  /**
    * KART YÜKLEME NOKTALARI / BAYİLER (GET /api/fillingcenter/list)
    * result[] → {servisId, tip:'K'|'B'|'V', bayiT2Kodu, enlemFStr, boylamFStr, aciklama, adres, telefon}
    */
@@ -820,11 +974,14 @@ export const ApiService = {
       const list: any[] = Array.isArray(data) ? data : [];
       return list
         .map((d: any) => {
-          const tip = String(d.tip || '').toUpperCase();
+          // Belediye sitesinin kendi ayrımı: yalnızca 'K' kiosk, diğer tüm tipler (B, V) bayi
+          const rawTip = String(d.tip || '').toUpperCase();
+          const isKiosk = rawTip === 'K';
+          const tip = isKiosk ? 'K' : 'B';
           return {
             id: Number(d.servisId),
             tip,
-            tipLabel: tip === 'K' ? 'Kiosk' : 'Bayi',
+            tipLabel: isKiosk ? 'Kiosk' : 'Bayi',
             name: fixMojibake(d.aciklama || d.bayiT2Kodu || '').replace(/_/g, ' ').trim(),
             address: fixMojibake(d.adres || '').trim(),
             phone: String(d.telefon || '').trim(),
@@ -903,7 +1060,11 @@ export const ApiService = {
    * CANLI HAT BİLGİSİ: DURAKLAR, SEFER SAATLERİ, ÜCRETLER VE GÜZERGAH
    * (variants → stations/{variantId} + schedule/{variantId}/{gün} + price/{routeCode})
    */
-  async getBusRoutes(routeCode?: string): Promise<BusRoute[]> {
+  async getBusRoutes(
+    routeCode?: string,
+    weekday?: number,
+    direction: 'G' | 'D' = 'G'
+  ): Promise<BusRoute[]> {
     const code = String(routeCode || '').trim();
     if (!code) {
       const officialRoutes = await this.getAllRoutes();
@@ -922,15 +1083,23 @@ export const ApiService = {
       if (!route || !route.id) return [];
 
       const variants = await getRouteVariants(route.id);
-      const baseline = pickBaselineVariant(variants);
+      const targetVariant =
+        variants.find(
+          (v) =>
+            v.routeVariantCode?.toUpperCase() === direction.toUpperCase() ||
+            (direction === 'G' && (v.directionTypeTitle?.toLowerCase().includes('gidiş') || v.isBaseLineVariant)) ||
+            (direction === 'D' && v.directionTypeTitle?.toLowerCase().includes('dönüş'))
+        ) ||
+        (direction === 'G' ? pickBaselineVariant(variants) || variants[0] : variants[1] || variants[0]);
 
-      // Haftanın günü: site 1=Pazartesi ... 7=Pazar kullanıyor
+      // Haftanın günü: parametre verilmişse onu al, yoksa bugünün günü (1=Pzt ... 7=Paz)
       const jsDay = new Date().getDay();
-      const weekday = jsDay === 0 ? 7 : jsDay;
+      const defaultWeekday = jsDay === 0 ? 7 : jsDay;
+      const targetWeekday = weekday != null ? Math.max(1, Math.min(7, Math.round(weekday))) : defaultWeekday;
 
       const [statData, schedData, priceData] = await Promise.all([
-        baseline ? fetchElazigKartJson(`/api/wheremybus/stations/${baseline.id}`) : Promise.resolve(null),
-        baseline ? fetchElazigKartJson(`/api/wheremybus/schedule/${baseline.id}/${weekday}`) : Promise.resolve(null),
+        targetVariant ? fetchElazigKartJson(`/api/wheremybus/stations/${targetVariant.id}`) : Promise.resolve(null),
+        targetVariant ? fetchElazigKartJson(`/api/wheremybus/schedule/${targetVariant.id}/${targetWeekday}`) : Promise.resolve(null),
         fetchElazigKartJson(`/api/wheremybus/price/${encodeURIComponent(route.kod)}`),
       ]);
 
@@ -950,7 +1119,7 @@ export const ApiService = {
           sequence: Number(s.rowNo ?? s.sequence ?? 0),
           latitude: parseFloat(s.latitude || 0),
           longitude: parseFloat(s.longitude || 0),
-          direction: baseline?.routeVariantCode || 'G',
+          direction: targetVariant?.routeVariantCode || direction,
         }))
         .sort((a, b) => a.sequence - b.sequence);
       const mainStops = stops.map((s) => s.stopName).filter((st) => st.length > 0);
@@ -973,9 +1142,14 @@ export const ApiService = {
           plannedStationIn: s.timeDescription || undefined,
           hour,
           minute,
-          direction: baseline?.routeVariantCode || 'G',
+          direction: targetVariant?.routeVariantCode || direction,
           ring: false,
         };
+      });
+      schedules.sort((a, b) => {
+        const tA = (a.hour ?? 0) * 60 + (a.minute ?? 0);
+        const tB = (b.hour ?? 0) * 60 + (b.minute ?? 0);
+        return tA - tB;
       });
       const departureTimes = schedules.map((s) => s.time).filter((t) => t.length > 0);
 
@@ -1021,6 +1195,79 @@ export const ApiService = {
   },
 
   /**
+   * CANLI HAT SEFER SAATLERİ (GET /api/wheremybus/schedule/{variantId}/{weekday})
+   * @param routeCode Hat kodu (örn: ABDULLAHPAŞA)
+   * @param weekday 1=Pazartesi ... 7=Pazar
+   * @param direction 'G' (Gidiş) | 'D' (Dönüş)
+   */
+  async getRouteSchedule(
+    routeCode: string,
+    weekday: number,
+    direction: 'G' | 'D' = 'G'
+  ): Promise<RouteScheduleItem[]> {
+    const code = String(routeCode || '').trim();
+    if (!code) return [];
+
+    try {
+      const route = await resolveRoute(code);
+      if (!route || !route.id) return [];
+
+      const variants = await getRouteVariants(route.id);
+      if (!variants || variants.length === 0) return [];
+
+      // İstenen yöne göre varyantı seç ('G' veya 'D')
+      const targetVariant =
+        variants.find(
+          (v) =>
+            v.routeVariantCode?.toUpperCase() === direction.toUpperCase() ||
+            (direction === 'G' && (v.directionTypeTitle?.toLowerCase().includes('gidiş') || v.isBaseLineVariant)) ||
+            (direction === 'D' && v.directionTypeTitle?.toLowerCase().includes('dönüş'))
+        ) ||
+        (direction === 'G' ? pickBaselineVariant(variants) || variants[0] : variants[1] || variants[0]);
+
+      if (!targetVariant) return [];
+
+      // 1-7 arası geçerli gün
+      const validDay = Math.max(1, Math.min(7, Math.round(weekday) || 1));
+      const schedData = await fetchElazigKartJson(`/api/wheremybus/schedule/${targetVariant.id}/${validDay}`);
+      const rawSched: any[] = Array.isArray(schedData?.schedule)
+        ? schedData.schedule
+        : Array.isArray(schedData)
+        ? schedData
+        : [];
+
+      const schedules: RouteScheduleItem[] = rawSched.map((s: any, idx: number) => {
+        const hour = s.hour !== undefined && s.hour !== null ? Number(s.hour) : undefined;
+        const minute = s.minute !== undefined && s.minute !== null ? Number(s.minute) : undefined;
+        const time =
+          hour !== undefined && minute !== undefined
+            ? `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+            : String(s.time || '');
+        return {
+          sequenceNumber: idx + 1,
+          stationName: fixMojibake(s.stationName || s.stopTitle || s.title || ''),
+          routeCode: route.kod,
+          time,
+          plannedStationIn: s.timeDescription || undefined,
+          hour,
+          minute,
+          direction: targetVariant?.routeVariantCode || direction,
+          ring: false,
+        };
+      });
+
+      return schedules.sort((a, b) => {
+        const tA = (a.hour ?? 0) * 60 + (a.minute ?? 0);
+        const tB = (b.hour ?? 0) * 60 + (b.minute ?? 0);
+        return tA - tB;
+      });
+    } catch (e) {
+      console.log(`Hat ${code} sefer saatleri alma hatası (gün ${weekday}, yön ${direction}):`, e);
+      return [];
+    }
+  },
+
+  /**
    * CANLI HAT DURAK BİLGİSİ (baseline varyantın durakları)
    */
   async getRouteStops(routeCode: string): Promise<RouteStopItem[]> {
@@ -1053,172 +1300,221 @@ export const ApiService = {
   },
 
   /**
-   * CANLI YEMEKHANE MENÜSÜ (unievi.firat.edu.tr Scraping)
+   * CANLI YEMEKHANE MENÜSÜ (https://unievi.firat.edu.tr) - 3 saat çevrimdışı önbellek
    */
-  async getDiningMenu(): Promise<DiningMenu> {
-    const todayStr = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+  async getDiningMenu(force = false): Promise<DiningMenu> {
     try {
-      const html = await fetchHtmlWithCorsProxy('https://unievi.firat.edu.tr/');
-      if (html) {
-        const boxMatch = html.match(/<div[^>]*class="[^"]*box__content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-        const searchScope = boxMatch ? boxMatch[1] : html;
-        const pMatches = [...searchScope.matchAll(/<p[^>]*>(.*?)<\/p>/gi)];
-        const cleanItems = pMatches
-          .map(m => m[1].replace(/<[^>]*>?/gm, '').trim())
-          .filter(str => str.length > 2 && !str.includes('Yemekhane') && !str.includes('Fırat'));
-
-        if (cleanItems.length > 0) {
-          const lunchItems: MenuItem[] =
-            cleanItems.length === 1
-              ? [
-                  {
-                    name: cleanItems[0],
-                    category: 'Günün Menüsü',
-                    icon: 'silverware-fork-knife',
-                  },
-                ]
-              : cleanItems.map((item, idx) => ({
-                  name: item,
-                  category:
-                    idx === 0
-                      ? 'Çorba'
-                      : idx === 1
-                        ? 'Ana Yemek'
-                        : idx === 2
-                          ? 'Yan Yemek'
-                          : 'Tatlı / Meyve',
-                  icon:
-                    idx === 0
-                      ? 'bowl-mix'
-                      : idx === 1
-                        ? 'food-drumstick'
-                        : idx === 2
-                          ? 'food-variant'
-                          : 'cake-variant',
-                }));
-
-          return {
-            date: todayStr,
-            lunch: lunchItems,
-            dinner: [],
-            priceStudent: '',
-            priceStaff: '',
-          };
-        }
-      }
+      return (await this.getDiningMenuWithCache(force)).data;
     } catch (e) {
-      console.log('Yemekhane canlı tarama hatası:', e);
+      console.log('Yemekhane menüsü alınamadı:', e);
+      const todayStr = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+      return { date: todayStr, lunch: [], dinner: [], priceStudent: '', priceStaff: '' };
     }
+  },
 
-    return {
-      date: todayStr,
-      lunch: [],
-      dinner: [],
-      priceStudent: '',
-      priceStaff: '',
-    };
+  async getDiningMenuWithCache(force = false): Promise<CachedResult<DiningMenu>> {
+    return cached(
+      'dining_menu',
+      CACHE_TTL.DINING,
+      async () => {
+        const todayStr = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+        try {
+          const html = await fetchHtmlWithCorsProxy('https://unievi.firat.edu.tr/');
+          if (html) {
+            const boxMatch = html.match(/<div[^>]*class="[^"]*box__content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+            const searchScope = boxMatch ? boxMatch[1] : html;
+            const pMatches = [...searchScope.matchAll(/<p[^>]*>(.*?)<\/p>/gi)];
+            const cleanItems = pMatches
+              .map(m => m[1].replace(/<[^>]*>?/gm, '').trim())
+              .filter(str => str.length > 2 && !str.includes('Yemekhane') && !str.includes('Fırat'));
+
+            if (cleanItems.length > 0) {
+              const lunchItems: MenuItem[] =
+                cleanItems.length === 1
+                  ? [
+                      {
+                        name: cleanItems[0],
+                        category: 'Günün Menüsü',
+                        icon: 'silverware-fork-knife',
+                      },
+                    ]
+                  : cleanItems.map((item, idx) => ({
+                      name: item,
+                      category:
+                        idx === 0
+                          ? 'Çorba'
+                          : idx === 1
+                            ? 'Ana Yemek'
+                            : idx === 2
+                              ? 'Yan Yemek'
+                              : 'Tatlı / Meyve',
+                      icon:
+                        idx === 0
+                          ? 'bowl-mix'
+                          : idx === 1
+                            ? 'food-drumstick'
+                            : idx === 2
+                              ? 'food-variant'
+                              : 'cake-variant',
+                    }));
+
+              return {
+                date: todayStr,
+                lunch: lunchItems,
+                dinner: [],
+                priceStudent: '',
+                priceStaff: '',
+              };
+            }
+          }
+        } catch (e) {
+          console.log('Yemekhane canlı tarama hatası:', e);
+        }
+
+        return {
+          date: todayStr,
+          lunch: [],
+          dinner: [],
+          priceStudent: '',
+          priceStaff: '',
+        };
+      },
+      { force }
+    );
   },
 
   /**
-   * CANLI NÖBETÇİ ECZANELER (elazig.bel.tr Scraping)
+   * CANLI NÖBETÇİ ECZANELER (elazig.bel.tr Scraping) - 1 saat çevrimdışı önbellek
    */
-  async getPharmacies(): Promise<Pharmacy[]> {
+  async getPharmacies(force = false): Promise<Pharmacy[]> {
     try {
-      const response = await fetch('https://www.elazig.bel.tr/nobetci-eczaneler/');
-      if (response.ok) {
-        const html = await response.text();
-        const cleanHtml = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
-        const stripTags = (str: string) => str.replace(/<[^>]*>?/gm, '\n').replace(/[ \t]+/g, ' ').trim();
-        const lines = stripTags(cleanHtml).split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      return (await this.getPharmaciesWithCache(force)).data;
+    } catch (e) {
+      console.log('Eczaneler alınamadı:', e);
+      return [];
+    }
+  },
 
-        const eczaneler: Pharmacy[] = [];
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          if (/Eczanesi$/i.test(line) || (/Eczanesi\b/i.test(line) && !line.toLowerCase().includes('nöbetçi') && !line.toLowerCase().includes('ana sayfa'))) {
-            let isim = line;
-            let adres = '';
-            let tel = '';
-            for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-              const nextLine = lines[j];
-              if (nextLine.toLowerCase().includes('eczanesi')) break;
-              if (/(\d{10,11}|0?\d{3}[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2})/g.test(nextLine)) {
-                tel = nextLine;
-              } else if (!adres && (nextLine.length > 5 || /mah|cad|sok|bulvar|no|işhanı/i.test(nextLine))) {
-                adres = nextLine;
+  async getPharmaciesWithCache(force = false): Promise<CachedResult<Pharmacy[]>> {
+    return cached(
+      'pharmacies',
+      CACHE_TTL.PHARMACIES,
+      async () => {
+        try {
+          const response = await fetch('https://www.elazig.bel.tr/nobetci-eczaneler/');
+          if (response.ok) {
+            const html = await response.text();
+            const cleanHtml = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+            const stripTags = (str: string) => str.replace(/<[^>]*>?/gm, '\n').replace(/[ \t]+/g, ' ').trim();
+            const lines = stripTags(cleanHtml).split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+            const eczaneler: Pharmacy[] = [];
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              if (/Eczanesi$/i.test(line) || (/Eczanesi\b/i.test(line) && !line.toLowerCase().includes('nöbetçi') && !line.toLowerCase().includes('ana sayfa'))) {
+                let isim = line;
+                let adres = '';
+                let tel = '';
+                for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+                  const nextLine = lines[j];
+                  if (nextLine.toLowerCase().includes('eczanesi')) break;
+                  if (/(\d{10,11}|0?\d{3}[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2})/g.test(nextLine)) {
+                    tel = nextLine;
+                  } else if (!adres && (nextLine.length > 5 || /mah|cad|sok|bulvar|no|işhanı/i.test(nextLine))) {
+                    adres = nextLine;
+                  }
+                }
+                if (!isim.includes('Belediyesi') && !isim.includes('Bilgilendirme')) {
+                  eczaneler.push({
+                    id: String(eczaneler.length + 1),
+                    name: isim,
+                    address: adres || 'Elazığ',
+                    phone: tel || '',
+                    district: 'Elazığ',
+                    dutyHours: '24 Saat Nöbetçi',
+                  });
+                }
               }
             }
-            if (!isim.includes('Belediyesi') && !isim.includes('Bilgilendirme')) {
-              eczaneler.push({
-                id: String(eczaneler.length + 1),
-                name: isim,
-                address: adres || 'Elazığ',
-                phone: tel || '',
-                district: 'Elazığ',
-                dutyHours: '24 Saat Nöbetçi',
+            if (eczaneler.length > 0) return eczaneler;
+          }
+        } catch (e) {
+          console.log('Eczane canlı istek hatası:', e);
+        }
+
+        return [];
+      },
+      { force }
+    );
+  },
+
+  /**
+   * CANLI SON DAKİKA HABERLERİ (elazigsonhaber.com RSS Feed XML Parser) - 15 dakika çevrimdışı önbellek
+   */
+  async getNews(force = false): Promise<NewsItem[]> {
+    try {
+      return (await this.getNewsWithCache(force)).data;
+    } catch (e) {
+      console.log('Haberler alınamadı:', e);
+      return [];
+    }
+  },
+
+  async getNewsWithCache(force = false): Promise<CachedResult<NewsItem[]>> {
+    return cached(
+      'news',
+      CACHE_TTL.NEWS,
+      async () => {
+        try {
+          const response = await fetch('https://www.elazigsonhaber.com/rss/tum-mansetler');
+          if (response.ok) {
+            const xmlText = await response.text();
+            const parser = new XMLParser({
+              ignoreAttributes: false,
+              attributeNamePrefix: '@_',
+            });
+            const jsonObj = parser.parse(xmlText);
+            const rawItems = jsonObj?.rss?.channel?.item || jsonObj?.feed?.entry || [];
+            const itemList = Array.isArray(rawItems) ? rawItems : [rawItems];
+
+            if (itemList.length > 0) {
+              return itemList.map((item: any, idx: number) => {
+                const title = item.title || 'Elazığ Haber';
+                const link = item.link || 'https://www.elazigsonhaber.com';
+                const description = (item.description || item.summary || '')
+                  .replace(/<[^>]+>/g, '')
+                  .trim();
+                const date = item.pubDate ? new Date(item.pubDate).toLocaleDateString('tr-TR') : 'Bugün';
+                const imgUrl = item.enclosure?.['@_url'] || item['media:content']?.['@_url'] || '';
+                const lowerFull = (title + ' ' + description).toLowerCase();
+                let category = 'Şehir';
+                if (/spor|futbol|elazığspor|maç|lig|puan|basketbol|voleybol|stadyum|transfer/i.test(lowerFull)) {
+                  category = 'Spor';
+                } else if (/fırat|üniversite|eğitim|öğrenci|burs|fakülte|okul|öğretmen|akademik|sınav/i.test(lowerFull)) {
+                  category = 'Eğitim';
+                } else if (/kültür|sanat|harput|tiyatro|konser|festival|müze|tarih|sergi|turizm/i.test(lowerFull)) {
+                  category = 'Kültür';
+                }
+
+                return {
+                  id: String(idx + 1),
+                  title,
+                  snippet: description.length > 130 ? description.substring(0, 130) + '...' : description,
+                  date,
+                  link,
+                  category,
+                  imageUrl: imgUrl,
+                };
               });
             }
           }
+        } catch (e) {
+          console.log('Haber RSS canlı istek hatası:', e);
         }
-        if (eczaneler.length > 0) return eczaneler;
-      }
-    } catch (e) {
-      console.log('Eczane canlı istek hatası:', e);
-    }
-
-    return [];
-  },
-
-  /**
-   * CANLI SON DAKİKA HABERLERİ (elazigsonhaber.com RSS Feed XML Parser)
-   */
-  async getNews(): Promise<NewsItem[]> {
-    try {
-      const response = await fetch('https://www.elazigsonhaber.com/rss/tum-mansetler');
-      if (response.ok) {
-        const xmlText = await response.text();
-        const parser = new XMLParser({
-          ignoreAttributes: false,
-          attributeNamePrefix: '@_',
-        });
-        const jsonObj = parser.parse(xmlText);
-        const rawItems = jsonObj?.rss?.channel?.item || jsonObj?.feed?.entry || [];
-        const itemList = Array.isArray(rawItems) ? rawItems : [rawItems];
-
-        if (itemList.length > 0) {
-          return itemList.map((item: any, idx: number) => {
-            const title = item.title || 'Elazığ Haber';
-            const link = item.link || 'https://www.elazigsonhaber.com';
-            const description = (item.description || item.summary || '')
-              .replace(/<[^>]+>/g, '')
-              .trim();
-            const date = item.pubDate ? new Date(item.pubDate).toLocaleDateString('tr-TR') : 'Bugün';
-            const imgUrl = item.enclosure?.['@_url'] || item['media:content']?.['@_url'] || '';
-            const lowerFull = (title + ' ' + description).toLowerCase();
-            let category = 'Şehir';
-            if (/spor|futbol|elazığspor|maç|lig|puan|basketbol|voleybol|stadyum|transfer/i.test(lowerFull)) {
-              category = 'Spor';
-            } else if (/fırat|üniversite|eğitim|öğrenci|burs|fakülte|okul|öğretmen|akademik|sınav/i.test(lowerFull)) {
-              category = 'Eğitim';
-            } else if (/kültür|sanat|harput|tiyatro|konser|festival|müze|tarih|sergi|turizm/i.test(lowerFull)) {
-              category = 'Kültür';
-            }
-
-            return {
-              id: String(idx + 1),
-              title,
-              snippet: description.length > 130 ? description.substring(0, 130) + '...' : description,
-              date,
-              link,
-              category,
-              imageUrl: imgUrl,
-            };
-          });
-        }
-      }
-    } catch (e) {
-      console.log('Haber RSS canlı istek hatası:', e);
-    }
-    return [];
+        return [];
+      },
+      { force }
+    );
   },
 
   /**
@@ -1799,9 +2095,13 @@ export const ApiService = {
   /**
    * CANLI ALADHAN NAMAZ VAKİTLERİ (N8N Node: Namaz Vakitleri API)
    */
-  async getPrayerTimesAsync(): Promise<{ times: PrayerTime[]; nextPrayer?: PrayerTime } | null> {
+  async getPrayerTimesAsync(date?: Date): Promise<{ times: PrayerTime[]; nextPrayer?: PrayerTime } | null> {
     try {
-      const response = await fetch('https://api.aladhan.com/v1/timingsByCity?city=Elazig&country=Turkey');
+      // method=13: Diyanet İşleri Başkanlığı hesaplaması (Türkiye resmî vakitleri); tarih verilirse o günün vakitleri
+      const dayPath = date
+        ? `/${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}`
+        : '';
+      const response = await fetch(`https://api.aladhan.com/v1/timingsByCity${dayPath}?city=Elazig&country=Turkey&method=13`);
       if (response.ok) {
         const data = await response.json();
         const timings = data?.data?.timings;

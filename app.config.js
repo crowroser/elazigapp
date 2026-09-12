@@ -72,7 +72,15 @@ module.exports = {
       ],
       "expo-asset",
       "expo-secure-store",
-      "react-native-nfc-manager"
+      "react-native-nfc-manager",
+      [
+        "expo-notifications",
+        {
+          icon: "./assets/images/android-icon-monochrome.png",
+          color: "#0F2A4A"
+        }
+      ],
+      "./plugins/withElazigWidgets"
     ],
     experiments: {
       typedRoutes: true

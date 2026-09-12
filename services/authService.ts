@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
-import { PrefsService } from './prefsService';
+import { PrefsService, FavoriteStop } from './prefsService';
 
 export interface UserProfile {
   uid: string;
@@ -20,6 +20,8 @@ export interface UserProfile {
   elazigKartNo?: string;
   recentBusStops?: string[];
   recentBusRoutes?: string[];
+  favoriteStop?: FavoriteStop | null;
+  favoriteRoutes?: string[];
   obsStudentNo?: string;
   createdAt?: string;
 }
@@ -119,6 +121,9 @@ export const AuthService = {
   async getUserProfile(uid: string): Promise<UserProfile | null> {
     const localCard = await PrefsService.getElazigKartNo();
     const localName = await PrefsService.getDisplayName();
+    const localFavStop = await PrefsService.getFavoriteStop();
+    const localFavRoutes = await PrefsService.getFavoriteRoutes();
+    const favoritesTouchedEarly = await PrefsService.getFavoritesTouched();
     let remote: UserProfile | null = null;
     try {
       const snap = await withTimeout(getDoc(doc(db, 'users', uid)));
@@ -134,11 +139,20 @@ export const AuthService = {
       elazigKartNo: localCard || remote?.elazigKartNo || '',
       recentBusStops: remote?.recentBusStops || (await PrefsService.getRecentStops()),
       recentBusRoutes: remote?.recentBusRoutes || (await PrefsService.getRecentRoutes()),
+      favoriteStop: localFavStop ?? (favoritesTouchedEarly ? null : remote?.favoriteStop ?? null),
+      favoriteRoutes: localFavRoutes.length > 0 || favoritesTouchedEarly ? localFavRoutes : (remote?.favoriteRoutes || []),
       obsStudentNo: remote?.obsStudentNo,
       createdAt: remote?.createdAt,
     };
     // Yerelde kart yok ama sunucuda varsa yerele indir
     if (!localCard && remote?.elazigKartNo) await PrefsService.setElazigKartNo(remote.elazigKartNo);
+    // Favoriler yalnızca bu cihazda hiç dokunulmamışsa sunucudan indirilir; aksi hâlde yerel silme geri alınmasın
+    if (!favoritesTouchedEarly) {
+      if (!localFavStop && remote?.favoriteStop) await PrefsService.setFavoriteStop(remote.favoriteStop);
+      if (localFavRoutes.length === 0 && remote?.favoriteRoutes && remote.favoriteRoutes.length > 0) {
+        await PrefsService.setFavoriteRoutes(remote.favoriteRoutes);
+      }
+    }
     return profile;
   },
 
@@ -149,6 +163,8 @@ export const AuthService = {
   async updateUserProfile(uid: string, data: Partial<UserProfile>): Promise<void> {
     if (data.elazigKartNo !== undefined) await PrefsService.setElazigKartNo(data.elazigKartNo);
     if (data.displayName) await PrefsService.setDisplayName(data.displayName);
+    if (data.favoriteStop !== undefined) await PrefsService.setFavoriteStop(data.favoriteStop);
+    if (data.favoriteRoutes !== undefined) await PrefsService.setFavoriteRoutes(data.favoriteRoutes);
     await withTimeout(setDoc(doc(db, 'users', uid), data, { merge: true }));
   },
 
