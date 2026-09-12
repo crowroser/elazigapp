@@ -52,26 +52,6 @@ google-services.json
 *.keystore
 
 
-# native-widgets: sürüm kontrolüne yalnızca config plugin'in kopyaladığı widget kaynakları girer
-# (kopyalanmış Android projesinin geri kalanı: gradle, mipmap, MainActivity, debug.keystore vb. hariç)
-native-widgets/android/*
-!native-widgets/android/app/
-native-widgets/android/app/*
-!native-widgets/android/app/src/
-native-widgets/android/app/src/*
-!native-widgets/android/app/src/main/
-native-widgets/android/app/src/main/*
-!native-widgets/android/app/src/main/java/
-!native-widgets/android/app/src/main/res/
-native-widgets/android/app/src/main/java/com/crowroser/elazigsehir/MainActivity.kt
-native-widgets/android/app/src/main/java/com/crowroser/elazigsehir/MainApplication.kt
-native-widgets/android/app/src/main/res/*
-!native-widgets/android/app/src/main/res/drawable/
-native-widgets/android/app/src/main/res/drawable/*
-!native-widgets/android/app/src/main/res/drawable/widget_*.xml
-!native-widgets/android/app/src/main/res/layout/
-!native-widgets/android/app/src/main/res/xml/
-
 # geçici test betikleri
 __*.ts
 __*.mjs
