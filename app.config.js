@@ -41,7 +41,14 @@ module.exports = {
     scheme: "elazigsehir",
     userInterfaceStyle: "automatic",
     ios: {
-      supportsTablet: true
+      supportsTablet: true,
+      bundleIdentifier: "com.crowroser.elazigsehir",
+      infoPlist: {
+        NSLocationWhenInUseUsageDescription: "Yakındaki otobüs duraklarını ve dolum bayilerini haritada gösterebilmek ve en yakın durakları listeleyebilmek için konumunuza ihtiyaç duyulmaktadır.",
+        NSCameraUsageDescription: "Kampüs ilan panosuna ilan verirken fotoğraf çekebilmeniz için kamera izni gerekmektedir.",
+        NSPhotoLibraryUsageDescription: "Kampüs ilan panosuna ilan verirken galerinizden fotoğraf seçebilmeniz için galeri izni gerekmektedir.",
+        NFCReaderUsageDescription: "ElazığKart bakiyenizi NFC ile okuyabilmek için NFC erişim izni gerekmektedir."
+      }
     },
     android: {
       adaptiveIcon: {
