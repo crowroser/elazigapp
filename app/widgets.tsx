@@ -7,6 +7,7 @@ import { Theme, themedStyles, useAppTheme } from '../constants/Theme';
 import { WidgetService, WidgetData } from '../services/widgetService';
 import { ApiService } from '../services/apiService';
 import { PrefsService } from '../services/prefsService';
+import { BriefService } from '../services/briefService';
 import { Card, IconCircle, Notice, PrimaryButton } from '../components/ui';
 
 const C = Theme.colors;
@@ -77,6 +78,12 @@ export default function WidgetsScreen() {
         }
       }
 
+      // L2: Günün Özeti widget'ı (OBS'ye giriş yapmadan, önbellekten)
+      try {
+        const brief = await BriefService.buildBrief({ quick: true });
+        Object.assign(next, BriefService.toWidgetData(brief));
+      } catch {}
+
       const pushed = await WidgetService.updateNativeWidgets(next);
       setData({ ...data, ...next });
       setNotice(
@@ -117,6 +124,19 @@ export default function WidgetsScreen() {
         {notice ? <Notice tone={notice.tone} text={notice.text} /> : null}
         <PrimaryButton label="Canlı verileri senkronla" icon="sync" onPress={sync} loading={busy} />
 
+        <Preview
+          icon="star-four-points"
+          color={C.accent}
+          bg={C.accentBg}
+          title="Günün Özeti (4×3)"
+          lines={[
+            data.brief_title && `${data.brief_title} · ${data.brief_subtitle || ''}`,
+            data.brief_line_1 && `${data.brief_icon_1 || '•'} ${data.brief_line_1}`,
+            data.brief_line_2 && `${data.brief_icon_2 || '•'} ${data.brief_line_2}`,
+            data.brief_line_3 && `${data.brief_icon_3 || '•'} ${data.brief_line_3}`,
+            data.brief_line_4 && `${data.brief_icon_4 || '•'} ${data.brief_line_4}`,
+          ]}
+        />
         <Preview icon="mosque" color={C.prayerGold} bg={C.prayerBg} title="Namaz Vakti" lines={[data.prayer_name && `${data.prayer_name} · ${data.prayer_time}`, data.prayer_countdown && `${data.prayer_countdown} kaldı`]} />
         <Preview icon="bus-clock" color={C.primary} bg={C.surfaceVariant} title="Otobüs" lines={[data.bus_line_name, data.bus_stop_name && `Durak: ${data.bus_stop_name}`, data.bus_eta && `Yaklaşan: ${data.bus_eta}${data.bus_next_eta ? ` · Sonraki: ${data.bus_next_eta}` : ''}`]} />
         <Preview icon="credit-card-chip-outline" color={C.accentDark} bg={C.accentBg} title="ElazığKart" lines={[data.elkart_balance, data.elkart_type]} />

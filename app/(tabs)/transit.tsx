@@ -19,6 +19,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { NotificationService } from '../../services/notificationService';
+import { LiveNotificationService } from '../../services/liveNotificationService';
 
 import { Theme, themedStyles, useAppTheme, useReducedMotion } from '../../constants/Theme';
 import {
@@ -223,6 +224,11 @@ export default function TransitScreen() {
   // Yoklama sırasında güncel hedefi okumak için ref (loadStationArrivals yeniden kurulmaz, sayaç sıfırlanmaz)
   const alertTargetRef = useRef(alertTarget);
   alertTargetRef.current = alertTarget;
+  const selectedStationRef = useRef(selectedStation);
+  selectedStationRef.current = selectedStation;
+
+  // L1: Ekran kapanınca canlı takip bildirimini kaldır (iptalde dokunma işleyicisi kaldırır)
+  useEffect(() => () => LiveNotificationService.stopBusLive(), []);
 
   // 1. Favorileri yükle
   useEffect(() => {
@@ -380,7 +386,7 @@ export default function TransitScreen() {
 
       // G8 Canlı bildirim kontrolü (2 durak kala bildirim ver) — hedef ref'ten okunur
       const target = alertTargetRef.current;
-      if (target && !target.fired && target.stopId === stopId) {
+      if (target && target.stopId === stopId) {
         // Plaka biliniyorsa aynı araç; bilinmiyorsa aynı hattın en yakın aracı
         const sameRoute = buses.filter((b) => b.busLineCode === target.routeCode);
         const matching =
@@ -388,7 +394,27 @@ export default function TransitScreen() {
           sameRoute.sort((a, b) => (a.remainingTimeCurr ?? 999) - (b.remainingTimeCurr ?? 999))[0];
         const stopsLeft = matching?.remainingNumberOfBusStops;
         const minsLeft = matching?.remainingTimeCurr;
+
+        // L1: Now Bar / kilit ekranı canlı takip — her yoklamada ETA ve kalan durak güncellenir
+        const stationName = selectedStationRef.current?.name || 'Durak';
+        if (matching) {
+          LiveNotificationService.updateBusLive({
+            stopId,
+            stopName: stationName,
+            lineNo: matching.busLineNo || matching.busLineCode,
+            lineName: matching.busLineLongName || undefined,
+            plate: matching.busPlate,
+            etaMin: minsLeft ?? null,
+            stopsLeft: stopsLeft ?? null,
+          });
+        } else if (target.fired) {
+          // Bildirim gitmişti ve araç artık listede yok → durağa vardı say, takibi kapat
+          LiveNotificationService.finishBusLive({ lineNo: target.routeCode, stopName: stationName });
+          setAlertTarget(null);
+        }
+
         const due =
+          !target.fired &&
           !!matching &&
           ((stopsLeft != null && stopsLeft <= 2) || (stopsLeft == null && minsLeft != null && minsLeft <= 3));
         if (due) {
@@ -1136,6 +1162,7 @@ export default function TransitScreen() {
                                 onPress={async () => {
                                   if (isActive) {
                                     setAlertTarget(null); // ikinci dokunuş: iptal
+                                    LiveNotificationService.stopBusLive();
                                     return;
                                   }
                                   const ok = await NotificationService.ensurePermission();
@@ -1158,9 +1185,11 @@ export default function TransitScreen() {
                                 />
                                 <Text style={[styles.notifyBtnText, { color: tint }]}>
                                   {isFired
-                                    ? 'Bildirildi ✓'
+                                    ? 'Bildirildi ✓ · takip sürüyor'
                                     : isActive
-                                    ? '2 durak kala haber verilecek · iptal için dokun'
+                                    ? LiveNotificationService.isAvailable()
+                                      ? 'Canlı takipte (Now Bar) · iptal için dokun'
+                                      : '2 durak kala haber verilecek · iptal için dokun'
                                     : 'Haber ver (2 durak kala)'}
                                 </Text>
                               </TouchableOpacity>

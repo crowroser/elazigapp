@@ -8,6 +8,7 @@ import { Theme, themedStyles, useAppTheme } from '../constants/Theme';
 import { ApiService, CardBalanceResult, DiningMenu, RouteLineItem } from '../services/apiService';
 import { PrefsService } from '../services/prefsService';
 import { NotificationService, NotifPreferences } from '../services/notificationService';
+import { LiveNotificationService, LiveCapabilities } from '../services/liveNotificationService';
 import { ObsService } from '../services/obsService';
 import { Card, Chip, IconCircle, LoadingState, Notice, Pill, PrimaryButton, ScreenHeader, SectionTitle } from '../components/ui';
 
@@ -36,6 +37,8 @@ const THRESHOLDS = [10, 20, 30, 50, 100];
 const TIMES = ['11:00', '11:30', '12:00', '12:30'];
 const LESSON_MINS = [10, 15, 20, 30];
 const PRAYER_MINS = [5, 10, 15, 20];
+const MORNING_TIMES = ['06:30', '07:00', '07:30', '08:00', '08:30'];
+const EVENING_TIMES = ['20:00', '21:00', '22:00'];
 
 export default function NotificationsScreen() {
   useAppTheme();
@@ -50,7 +53,13 @@ export default function NotificationsScreen() {
     balanceEnabled: true,
     balanceThreshold: 20,
     gradeEnabled: true,
+    briefMorningEnabled: false,
+    briefMorningTime: '07:30',
+    briefEveningEnabled: false,
+    briefEveningTime: '21:00',
+    prayerLiveEnabled: false,
   });
+  const [liveCaps, setLiveCaps] = useState<LiveCapabilities | null>(null);
 
   const [hasPermission, setHasPermission] = useState(true);
   const [scheduledCount, setScheduledCount] = useState(0);
@@ -74,6 +83,7 @@ export default function NotificationsScreen() {
       // 2. Tercihleri yükle
       const p = await NotificationService.getPreferences();
       setPrefs(p);
+      LiveNotificationService.getCapabilities().then(setLiveCaps).catch(() => {});
 
       try {
         const raw = await AsyncStorage.getItem(LEGACY_KEY);
@@ -117,6 +127,14 @@ export default function NotificationsScreen() {
       await NotificationService.cancelCategory('exam');
     } else if (k === 'prayerEnabled' && !v) {
       await NotificationService.cancelCategory('prayer');
+    } else if (k === 'briefMorningEnabled' || k === 'briefEveningEnabled' || k === 'briefMorningTime' || k === 'briefEveningTime') {
+      // L2: Özet bildirimi anında yeniden planlanır (6 saatlik senkron bekletmesine takılmasın)
+      if (next.briefMorningEnabled || next.briefEveningEnabled) await NotificationService.scheduleBrief(next);
+      else await NotificationService.cancelCategory('brief');
+    } else if (k === 'prayerLiveEnabled') {
+      // L1: Native AlarmManager'lı geri sayım bildirimi
+      const ok = await LiveNotificationService.setPrayerLiveEnabled(Boolean(v));
+      if (!ok && v) Alert.alert('Desteklenmiyor', "Bu build'de canlı bildirim modülü yok (Android native build gerekir).");
     }
 
     // Güncel plan sayısını yenile
@@ -219,9 +237,95 @@ export default function NotificationsScreen() {
               {scheduledByCat.lesson ? <Pill label={`📚 Ders: ${scheduledByCat.lesson}`} color={C.primary} bg={C.surfaceVariant} /> : null}
               {scheduledByCat.exam ? <Pill label={`📝 Sınav: ${scheduledByCat.exam}`} color={C.uniRed} bg={C.uniRedSoft} /> : null}
               {scheduledByCat.prayer ? <Pill label={`🕌 Namaz: ${scheduledByCat.prayer}`} color={C.accentDark} bg={C.accentBg} /> : null}
+              {scheduledByCat.brief ? <Pill label={`✨ Özet: ${scheduledByCat.brief}`} color={C.success} bg={C.successBg} /> : null}
             </View>
           )}
         </Card>
+
+        {/* L2: Günün Özeti (Now Brief tarzı) */}
+        <SectionTitle title="Günün Özeti" action="Önizle" onAction={() => router.push('/brief' as any)} style={styles.section} />
+        <Card style={{ gap: 12 }}>
+          <View style={styles.row}>
+            <IconCircle name="weather-sunset-up" color={C.accentDark} bg={C.accentBg} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>Sabah Özeti</Text>
+              <Text style={styles.sub}>Bugünün dersleri, sınav, ElazığKart bakiyesi, namaz vakti ve hava tek bildirimde</Text>
+            </View>
+            <Switch
+              value={prefs.briefMorningEnabled}
+              onValueChange={(v) => updatePref('briefMorningEnabled', v)}
+              trackColor={{ true: C.primaryLight }}
+            />
+          </View>
+          {prefs.briefMorningEnabled && (
+            <>
+              <Text style={styles.chipHeader}>Saat</Text>
+              <View style={styles.chips}>
+                {MORNING_TIMES.map((t) => (
+                  <Chip key={t} label={t} active={prefs.briefMorningTime === t} onPress={() => updatePref('briefMorningTime', t)} />
+                ))}
+              </View>
+            </>
+          )}
+        </Card>
+        <Card style={{ gap: 12 }}>
+          <View style={styles.row}>
+            <IconCircle name="weather-night" color={C.secondary} bg={C.secondaryBg} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>Akşam Özeti</Text>
+              <Text style={styles.sub}>Yarının ilk dersi, sınavı ve kesintileri — uyumadan önce hazırlık</Text>
+            </View>
+            <Switch
+              value={prefs.briefEveningEnabled}
+              onValueChange={(v) => updatePref('briefEveningEnabled', v)}
+              trackColor={{ true: C.primaryLight }}
+            />
+          </View>
+          {prefs.briefEveningEnabled && (
+            <>
+              <Text style={styles.chipHeader}>Saat</Text>
+              <View style={styles.chips}>
+                {EVENING_TIMES.map((t) => (
+                  <Chip key={t} label={t} active={prefs.briefEveningTime === t} onPress={() => updatePref('briefEveningTime', t)} />
+                ))}
+              </View>
+            </>
+          )}
+        </Card>
+
+        {/* L1: Canlı bildirimler (Android 16 Live Updates / Samsung Now Bar) */}
+        {Platform.OS === 'android' && (
+          <>
+            <SectionTitle title="Canlı Bildirimler (Now Bar)" style={styles.section} />
+            <Card style={{ gap: 12 }}>
+              <View style={styles.row}>
+                <IconCircle name="mosque" color={C.prayerGold || C.accentDark} bg={C.prayerBg || C.accentBg} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.title}>Namaz Vaktine Geri Sayım</Text>
+                  <Text style={styles.sub}>
+                    {!LiveNotificationService.isAvailable()
+                      ? "Bu build'de canlı bildirim modülü yok"
+                      : liveCaps?.promoted
+                      ? "Kilit ekranı, durum çubuğu çipi ve Samsung Now Bar'da sürekli akan sayaç"
+                      : 'Bildirim panelinde sürekli güncellenen sayaç (Now Bar için Android 16 / One UI 8)'}
+                  </Text>
+                </View>
+                <Switch
+                  value={prefs.prayerLiveEnabled}
+                  onValueChange={(v) => updatePref('prayerLiveEnabled', v)}
+                  trackColor={{ true: C.prayerGold || C.accentDark }}
+                  disabled={!LiveNotificationService.isAvailable()}
+                />
+              </View>
+              {liveCaps?.promoted && !liveCaps.canPostPromoted ? (
+                <Notice tone="info" text="Ayarlar > Bildirimler > Canlı güncellemeler altında Elazığ Şehir'e izin verin; aksi halde sayaç yalnızca bildirim panelinde görünür." />
+              ) : null}
+              <Text style={styles.sub}>
+                Otobüs canlı takibi ayrı bir ayar gerektirmez: Ulaşım ekranında "Haber ver"e dokunduğunuz araç varana kadar Now Bar'da takip edilir.
+              </Text>
+            </Card>
+          </>
+        )}
 
         {/* F7: Üniversite & OBS Bildirimleri */}
         <SectionTitle title="Fırat Üniversitesi & OBS" style={styles.section} />

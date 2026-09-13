@@ -6,12 +6,14 @@ import { ApiService } from './apiService';
 import { PrefsService } from './prefsService';
 import { ObsService, diffGrades, diffGraduation } from './obsService';
 import { EventsService } from './eventsService';
+import { BriefService } from './briefService';
 
 /**
  * Yerel bildirimler altyapısı.
  * Sunucu gerekmez; tüm bildirimler cihazda zamanlanır.
  *
- * Kategoriler: lesson (ders), exam (sınav), prayer (namaz), balance (bakiye), grade (not değişikliği), event (etkinlik)
+ * Kategoriler: lesson (ders), exam (sınav), prayer (namaz), balance (bakiye), grade (not değişikliği), event (etkinlik),
+ *              brief (sabah/akşam günün özeti — L2)
  */
 
 // ─── Handler (uygulama açıkken bildirimi gösterme davranışı) ────────────────
@@ -27,7 +29,7 @@ Notifications.setNotificationHandler({
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type NotifCategory = 'lesson' | 'exam' | 'prayer' | 'balance' | 'grade' | 'event';
+export type NotifCategory = 'lesson' | 'exam' | 'prayer' | 'balance' | 'grade' | 'event' | 'brief';
 
 export interface ScheduledItem {
   title: string;
@@ -45,6 +47,14 @@ export interface NotifPreferences {
   balanceEnabled: boolean;
   balanceThreshold: number;
   gradeEnabled: boolean;
+  /** L2: Sabah özeti ("Günaydın" — bugünün dersleri, sınav, bakiye, hava) */
+  briefMorningEnabled: boolean;
+  briefMorningTime: string; // "07:30"
+  /** L2: Akşam özeti (yarının ilk dersi/sınavı) */
+  briefEveningEnabled: boolean;
+  briefEveningTime: string; // "21:00"
+  /** L1: Namaz vaktine canlı geri sayım (Now Bar / kilit ekranı) */
+  prayerLiveEnabled: boolean;
 }
 
 const DEFAULT_PREFS: NotifPreferences = {
@@ -56,6 +66,11 @@ const DEFAULT_PREFS: NotifPreferences = {
   balanceEnabled: true,
   balanceThreshold: 20,
   gradeEnabled: true,
+  briefMorningEnabled: false,
+  briefMorningTime: '07:30',
+  briefEveningEnabled: false,
+  briefEveningTime: '21:00',
+  prayerLiveEnabled: false,
 };
 
 const PREFS_KEY = '@notif_preferences';
@@ -333,6 +348,62 @@ export const NotificationService = {
   },
 
   /**
+   * L2: Sabah/akşam "Günün Özeti" bildirimlerini planlar.
+   * İçerik planlama anında BriefService ile üretilir (OBS'ye giriş yapılır, bakiye sorgulanır); en fazla
+   * ~12 saat eski olabilir (uygulama her açılışta yeniden planlar). Sabah özeti bugüne, akşam özeti
+   * yarına bakar. Dokununca /brief açılır.
+   */
+  async scheduleBrief(prefs: NotifPreferences): Promise<void> {
+    const items: ScheduledItem[] = [];
+    const now = new Date();
+
+    const nextAt = (hhmm: string): Date | null => {
+      const [h, m] = hhmm.split(':').map(Number);
+      if (isNaN(h) || isNaN(m)) return null;
+      const d = new Date(now);
+      d.setHours(h, m, 0, 0);
+      if (d.getTime() <= now.getTime() + 60_000) d.setDate(d.getDate() + 1);
+      return d;
+    };
+
+    if (prefs.briefMorningEnabled) {
+      const at = nextAt(prefs.briefMorningTime || '07:30');
+      if (at) {
+        try {
+          const brief = await BriefService.buildBrief({ horizon: 'today' });
+          if (brief.items.length > 0) {
+            items.push({
+              title: `☀️ ${brief.greeting} — günün özeti`,
+              body: brief.summaryLine,
+              route: '/brief',
+              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
+            });
+          }
+        } catch {}
+      }
+    }
+
+    if (prefs.briefEveningEnabled) {
+      const at = nextAt(prefs.briefEveningTime || '21:00');
+      if (at) {
+        try {
+          const brief = await BriefService.buildBrief({ horizon: 'tomorrow' });
+          if (brief.items.length > 0) {
+            items.push({
+              title: '🌙 Yarına hazırlık — akşam özeti',
+              body: brief.summaryLine,
+              route: '/brief',
+              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
+            });
+          }
+        } catch {}
+      }
+    }
+
+    await this.reschedule('brief', items);
+  },
+
+  /**
    * Tüm bildirim kategorilerini ve zamanlamalarını senkronize eder.
    * _layout.tsx içinde uygulama açıldığında ve AppState 'active' olduğunda çağrılır.
    * 6 saatten sık çalışmayı engellemek için son zaman kontrol edilir (force=true hariç).
@@ -400,6 +471,9 @@ export const NotificationService = {
                 const tt = await ObsService.getTimetable();
                 if (tt.entries && tt.entries.length > 0) {
                   await this.scheduleLessons(tt.entries, prefs.lessonMinutesBefore);
+                } else {
+                  // Güncel yarıyıl programı henüz yok: geçen dönemden kalan haftalık ders bildirimleri çalmasın
+                  await this.cancelCategory('lesson');
                 }
               } catch {}
             }
@@ -408,6 +482,7 @@ export const NotificationService = {
             if (prefs.examEnabled) {
               try {
                 const ex = await ObsService.getExamSchedule();
+                if (ex.notPublished) await this.cancelCategory('exam');
                 if (ex.groups && ex.groups.length > 0) {
                   const flatExams = ex.groups.flatMap((g) =>
                     g.exams.map((e) => ({
@@ -547,6 +622,13 @@ export const NotificationService = {
         }
       }
     } catch {}
+
+    // 5. Günün Özeti (L2) — sabah/akşam
+    if (prefs.briefMorningEnabled || prefs.briefEveningEnabled) {
+      try {
+        await this.scheduleBrief(prefs);
+      } catch {}
+    }
 
     await this.setLastSyncTime(Date.now());
     return { synced: true };

@@ -94,6 +94,8 @@ export default function RootLayout() {
             params: stopId ? { stopId } : {},
           });
         }
+        // Not: elazigsehir://brief (özet widget'ı / canlı bildirim) expo-router tarafından doğrudan /brief rotasına
+        // eşlenir; burada ayrıca push edilmez (soğuk başlatmada çift navigasyon → "Maximum update depth" çökmesi).
       } catch {}
     };
 
@@ -131,6 +133,7 @@ export default function RootLayout() {
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Hakkında' }} />
           <Stack.Screen name="notifications" options={{ headerShown: false }} />
           <Stack.Screen name="widgets" options={{ title: 'Widget Önizleme' }} />
+          <Stack.Screen name="brief" options={{ headerShown: false }} />
           <Stack.Screen name="classifieds" options={{ title: 'İlan Panosu' }} />
           <Stack.Screen name="assistant" options={{ title: 'Gakgoş Asistan' }} />
           <Stack.Screen name="fillingcenters" options={{ headerShown: false }} />

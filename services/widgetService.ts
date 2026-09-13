@@ -2,6 +2,7 @@ import { NativeModules, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiService } from './apiService';
 import { PrefsService } from './prefsService';
+import { BriefService } from './briefService';
 
 const { WidgetDataModule } = NativeModules;
 
@@ -24,6 +25,17 @@ export interface WidgetData {
   elkart_balance?: string;
   elkart_type?: string;
   news_title?: string;
+  /** L2: Günün Özeti widget'ı (BriefService.toWidgetData) */
+  brief_title?: string;
+  brief_subtitle?: string;
+  brief_icon_1?: string;
+  brief_line_1?: string;
+  brief_icon_2?: string;
+  brief_line_2?: string;
+  brief_icon_3?: string;
+  brief_line_3?: string;
+  brief_icon_4?: string;
+  brief_line_4?: string;
   updated_at?: string;
 }
 
@@ -139,6 +151,13 @@ export const WidgetService = {
         }
       } catch (e) {}
 
+      // L2: Günün Özeti widget'ı (OBS'ye giriş yapmadan, önbellekten)
+      try {
+        const brief = await BriefService.buildBrief({ quick: true });
+        Object.assign(next, BriefService.toWidgetData(brief));
+      } catch (e) {}
+
+      // Not: native updateWidgetData, namaz canlı geri sayımı (L1) açıksa onu da yeni vakitlerle tazeler
       return await this.updateNativeWidgets(next);
     } catch (e) {
       console.warn('[WidgetService] syncWidgets hatası:', e);

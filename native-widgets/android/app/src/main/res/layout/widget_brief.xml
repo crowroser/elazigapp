@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_brief_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_brief_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Günaydın"
+                android:textColor="#0D1C2E"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/tv_brief_subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Günün özeti"
+                android:textColor="#43474E"
+                android:textSize="10sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_brief_updated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="07:30"
+            android:textColor="#0061A5"
+            android:textSize="9sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/row_brief_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/widget_brief_row_bg"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:layout_marginTop="5dp">
+
+        <TextView
+            android:id="@+id/tv_brief_icon_1"
+            android:layout_width="22dp"
+            android:layout_height="wrap_content"
+            android:text="•"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tv_brief_line_1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text=""
+            android:textColor="#0D1C2E"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+    <LinearLayout
+        android:id="@+id/row_brief_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/widget_brief_row_bg"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:layout_marginTop="5dp">
+
+        <TextView
+            android:id="@+id/tv_brief_icon_2"
+            android:layout_width="22dp"
+            android:layout_height="wrap_content"
+            android:text="•"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tv_brief_line_2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text=""
+            android:textColor="#0D1C2E"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+    <LinearLayout
+        android:id="@+id/row_brief_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/widget_brief_row_bg"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:layout_marginTop="5dp">
+
+        <TextView
+            android:id="@+id/tv_brief_icon_3"
+            android:layout_width="22dp"
+            android:layout_height="wrap_content"
+            android:text="•"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tv_brief_line_3"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text=""
+            android:textColor="#0D1C2E"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+    <LinearLayout
+        android:id="@+id/row_brief_4"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/widget_brief_row_bg"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:layout_marginTop="5dp">
+
+        <TextView
+            android:id="@+id/tv_brief_icon_4"
+            android:layout_width="22dp"
+            android:layout_height="wrap_content"
+            android:text="•"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tv_brief_line_4"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text=""
+            android:textColor="#0D1C2E"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_brief_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Özet için uygulamayı bir kez açın"
+        android:textColor="#43474E"
+        android:textSize="11sp"
+        android:layout_marginTop="8dp"
+        android:visibility="gone" />
+
+</LinearLayout>

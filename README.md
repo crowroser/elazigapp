@@ -99,12 +99,20 @@ Tüm ekran görüntüleri gerçek Android cihaz üzerinden, canlı şehir verile
 - Canlı şehir ve üniversite verilerini (yaklaşan otobüsler, nöbetçi eczaneler, kesintiler, yemekhane menüsü) kullanarak doğal Türkçe ile hızlı cevap veren kural tabanlı yerel asistan.
 
 ### 📱 6. Android Native Widget Desteği (AppWidgets)
-Kotlin ile yazılmış 3 adet optimize Android ana ekran bileşeni:
+Kotlin ile yazılmış 4 adet optimize Android ana ekran bileşeni:
 1. **Otobüs Yaklaşma Widget'ı** (`BusWidgetProvider`): Seçili favori durağa yaklaşan otobüsleri ana ekranda saniye bazlı gösterir.
 2. **ElazığKart Bakiye Widget'ı** (`ElkartWidgetProvider`): Güncel kart bakiyesini ve son güncelleme zamanını yansıtır.
 3. **Namaz Vakitleri Widget'ı** (`PrayerWidgetProvider`): Günün vakitlerini ve sıradaki ezana kalan süreyi ana ekrana taşır.
+4. **Günün Özeti Widget'ı** (`BriefWidgetProvider`, 4×3): Samsung *Now Brief* tarzı — selamlama + öncelik sırasına dizilmiş 4 satır (sınav/ders, favori durak varışı, bakiye, namaz, hava, kesinti, manşet). Dokununca `/brief` ekranı açılır.
 
-### 🎨 7. Tasarım Dili & Koyu Tema
+### ✨ 7. Günün Özeti & Canlı Bildirimler (Now Brief / Now Bar)
+- **Günün Özeti motoru** (`services/briefService.ts`): Hava, namaz, OBS ders programı ve sınav takvimi (12 sa önbellek), görülmemiş notlar, ElazığKart bakiyesi, favori durak canlı varışı, planlı kesinti, yemekhane menüsü ve manşeti tek listede toplar; 18:00 sonrası otomatik olarak **yarına** bakar. Uydurma satır üretilmez — kaynağı olmayan bilgi listeye girmez.
+- **Sabah / Akşam özet bildirimi**: Ayarlanabilir saatte (varsayılan 07:30 / 21:00) tek bildirimde "3 ders, ilk ders 09:00 · Bakiye 12,50 ₺ · Öğle 12:41 · 24° Güneşli" gibi bir gövde; dokununca `/brief`.
+- **Canlı bildirimler** (`LiveNotificationModule.kt`, Android 16 *Live Updates* API): `Notification.ProgressStyle` + `FLAG_PROMOTED_ONGOING` + `setShortCriticalText` ile **Samsung One UI 8 Now Bar**, kilit ekranı ve durum çubuğu çipinde görünür; Android 15 ve altında klasik ongoing + progress bildirimine düşer.
+  - **Otobüs canlı takibi**: Ulaşım ekranında "Haber ver"e dokunulan araç için varış geri sayımı (sistem kronometresi — uygulama arka plandayken de akar), kalan durak noktaları ve ilerleme çubuğu.
+  - **Namaz vaktine geri sayım**: `AlarmManager` ile kendini yenileyen (`PrayerLiveReceiver`) sürekli sayaç; uygulama kapalıyken bile bir sonraki vakte geçer.
+
+### 🎨 8. Tasarım Dili & Koyu Tema
 - **Harput Kalesi Temalı Görsel Kimlik**: Şehrin kadim kalesi, doğan güneş ve ulaşım rotası çizgilerinden esinlenen modern vektörel ikon seti (`icon.png`, adaptive foreground, background, monochrome).
 - **Gece Mavisi / Lacivert Palet**: `#0F2A4A` kurumsal açılış (splash) ve arayüz rengi.
 - **Tam Koyu Tema (Dark Mode)**: Sistem temasına uyumlu veya manuel seçilebilir Koyu Tema desteği; CARTO Dark harita katmanı entegrasyonu.
@@ -239,6 +247,7 @@ elazigapp/
 │   ├── trip_planner.tsx              # Rota Planlayıcı
 │   ├── fillingcenters.tsx            # ElazığKart Dolum Bayileri harita listesi
 │   ├── notifications.tsx             # Akıllı bildirim ayarları
+│   ├── brief.tsx                     # Günün Özeti (Now Brief tarzı) ekranı
 │   └── widgets.tsx                   # Android Widget yapılandırma ve önizleme
 ├── components/                       # Yeniden kullanılabilir UI ve harita bileşenleri
 │   ├── ui.tsx                        # Tasarım sistemi (Card, Chip, Button, StatTile, Modal)
@@ -251,7 +260,9 @@ elazigapp/
 │   ├── obsService.ts                 # Fırat OBS CAS girişi, HTML parsers, mezuniyet motoru
 │   ├── eventsService.ts              # Bubilet API etkinlik istemcisi
 │   ├── authService.ts                # Firebase Auth & Firestore profil yönetimi
-│   ├── notificationService.ts        # Yerel bildirim planlayıcı
+│   ├── notificationService.ts        # Yerel bildirim planlayıcı (+ sabah/akşam özeti)
+│   ├── briefService.ts               # Günün Özeti toplayıcı (widget + bildirim + ekran)
+│   ├── liveNotificationService.ts    # Canlı bildirim köprüsü (Live Updates / Now Bar)
 │   ├── widgetService.ts              # Native widget veri köprüsü
 │   └── prefsService.ts               # AsyncStorage yerel kullanıcı tercihleri
 ├── native-widgets/                   # Yerel Android AppWidget Kotlin kodları ve XML layout'ları

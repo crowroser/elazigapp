@@ -33,6 +33,8 @@ import { cached } from '../../services/cacheService';
 import { ObsService, ObsTimetableEntry, ObsGraduationAnalysis } from '../../services/obsService';
 import { CardQueryModal } from '../../components/CardQueryModal';
 import { AuthProfileModal } from '../../components/AuthProfileModal';
+import { BriefCard } from '../../components/BriefCard';
+import { BriefService, DailyBrief } from '../../services/briefService';
 import { Card, Pill, Countdown, LiveBadge } from '../../components/ui';
 
 const C = Theme.colors;
@@ -91,6 +93,7 @@ export default function HomeScreen() {
   const [obsName, setObsName] = useState('');
   const [obsLoggedIn, setObsLoggedIn] = useState(false);
   const [todayLessons, setTodayLessons] = useState<ObsTimetableEntry[]>([]);
+  const [timetableUnpublished, setTimetableUnpublished] = useState(false);
   const [obsDept, setObsDept] = useState('');
   const [obsGrad, setObsGrad] = useState<ObsGraduationAnalysis | null>(null);
   const [unseenGradeCount, setUnseenGradeCount] = useState(0);
@@ -110,6 +113,23 @@ export default function HomeScreen() {
   const [outages, setOutages] = useState<OutageItem[]>([]);
 
   const [refreshing, setRefreshing] = useState(false);
+
+  // L2: Günün Özeti (Now Brief tarzı) — hızlı mod: OBS'ye giriş yapmaz, önbellek kullanır
+  const [brief, setBrief] = useState<DailyBrief | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const briefRef = React.useRef<DailyBrief | null>(null);
+  const loadBrief = useCallback(async (force = false) => {
+    // Sekmeye her dönüşte yeniden toplamamak için 5 dk tazelik eşiği
+    if (!force && briefRef.current && Date.now() - briefRef.current.builtAt < 5 * 60_000) return;
+    setBriefLoading(true);
+    try {
+      const b = await BriefService.buildBrief({ quick: true });
+      briefRef.current = b;
+      setBrief(b);
+    } catch {} finally {
+      setBriefLoading(false);
+    }
+  }, []);
 
   // 1. Kart bakiyesi yükleme
   const loadCard = useCallback(async (no: string, silent = false) => {
@@ -257,12 +277,13 @@ export default function HomeScreen() {
       ObsService.getCredentials().then(async (cred) => {
         if (cred) {
           try {
-            const { data: tt } = await cached('obs_timetable_home', 6 * 60 * 60 * 1000, () =>
+            const { data: tt } = await cached('obs_timetable_home_v3', 6 * 60 * 60 * 1000, () =>
               ObsService.getTimetable()
             );
             if (tt && tt.entries) {
               const todayIdx = (new Date().getDay() + 6) % 7;
               setTodayLessons(tt.entries.filter((e) => e.dayIndex === todayIdx));
+              setTimetableUnpublished(!!tt.notPublished);
             }
           } catch {}
           // Mezuniyet ozeti (6 saat onbellek, OBS kuyrugunda serilestirilir)
@@ -275,9 +296,10 @@ export default function HomeScreen() {
       });
 
       refreshFavorites();
+      loadBrief();
       const interval = setInterval(refreshFavorites, 20000);
       return () => clearInterval(interval);
-    }, [refreshFavorites])
+    }, [refreshFavorites, loadBrief])
   );
 
   const onRefresh = async () => {
@@ -285,6 +307,7 @@ export default function HomeScreen() {
     await Promise.all([
       loadGeneralData(),
       refreshFavorites(),
+      loadBrief(true),
       cardNo ? loadCard(cardNo) : Promise.resolve(),
     ]);
     setRefreshing(false);
@@ -421,6 +444,16 @@ export default function HomeScreen() {
               {(profile?.displayName || obsName || 'M').charAt(0).toUpperCase()}
             </Text>
           </TouchableOpacity>
+        </View>
+
+        {/* ── 1b. GÜNÜN ÖZETİ (L2 — Now Brief tarzı) ─────────────────────── */}
+        <View style={styles.briefSection}>
+          <BriefCard
+            brief={brief}
+            loading={briefLoading}
+            onPress={() => router.push('/brief' as any)}
+            onItemPress={(it) => router.push((it.route || '/brief') as any)}
+          />
         </View>
 
         {/* ── 2. "BENİM DURAĞIM" / YAKINIMDAKİ DURAK (G5 geri sayım, G7) ──── */}
@@ -603,6 +636,8 @@ export default function HomeScreen() {
                     ? `${nextLesson.startTime} ${nextLesson.courseName}${nextLesson.room ? ` · ${nextLesson.room}` : ''}`
                     : todayLessons.length > 0
                     ? `Bugünkü ${todayLessons.length} ders tamamlandı`
+                    : timetableUnpublished
+                    ? 'Ders programı henüz yayınlanmadı'
                     : obsGrad
                     ? 'Bugün ders yok'
                     : 'Özet için OBS ekranını bir kez açın'}
@@ -709,6 +744,8 @@ const styles = themedStyles(() =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: C.background },
     content: { paddingBottom: 12, gap: 10, flexGrow: 1 },
+
+    briefSection: { paddingHorizontal: Theme.spacing.lg },
 
     topBar: {
       flexDirection: 'row',
