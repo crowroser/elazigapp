@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { GradeSnapshot, GradeChange, GradeCourseSnapshot } from './prefsService';
+import { cached } from './cacheService';
 
 /**
  * Fırat Üniversitesi OBS (obs.firat.edu.tr / Proliz OİBS) servisi.
@@ -312,6 +313,78 @@ export interface ObsMessageDetail {
   body: string;
 }
 
+// ─── O1: Mezuniyet Durum Analizi ─────────────────────────────────────────────
+
+export interface ObsGraduationCriterion {
+  key: string;
+  title: string;
+  value: string;
+  target?: string;
+  percent?: number | null;
+  status: 'ok' | 'warning' | 'fail';
+  warning: boolean;
+  rawText?: string;
+}
+
+export interface ObsUncompletedCourse {
+  code: string;
+  name: string;
+  akts: number;
+  type: string;
+  groupDesc: string;
+  isGroupHeader: boolean;
+}
+
+export interface ObsFailedCourse {
+  term: string;
+  code: string;
+  name: string;
+  akts: number;
+  type: string;
+  grade: string;
+}
+
+export interface ObsGraduationAnalysis {
+  studentNo: string;
+  faculty: string;
+  program: string;
+  programType: string;
+  registrationDate: string;
+  registrationReason: string;
+  studentStatus: string;
+  curriculum: string;
+  periodsStudied: number;
+  normalDuration: number;
+  maxDuration: number;
+  durationProgressPct: number;
+  agno: number | null;
+  completionWarning: string;
+  probableGraduationDate: string;
+  chartWarning: string;
+  criteria: ObsGraduationCriterion[];
+  uncompletedCount: number;
+  failedCount: number;
+  uncompletedCourses: ObsUncompletedCourse[];
+  failedCourses: ObsFailedCourse[];
+  approvalStatus: string; // 'pending' | 'active' | 'unknown'
+  approvalMessage: string;
+  fetchedAt: number;
+}
+
+export interface GraduationProjection {
+  neededAverageGrade: string; // e.g. "CB veya üzeri"
+  targetAgno: number;
+  remainingAkts: number;
+  estimatedTermsRemaining: number;
+  message: string;
+}
+
+export interface GraduationChange {
+  type: 'criteria_met' | 'courses_reduced' | 'agno_improved';
+  title: string;
+  description: string;
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const OBS_ORIGIN = 'https://obs.firat.edu.tr';
@@ -336,6 +409,8 @@ const PAGE = {
   genelBilgiler: 111,
   gelenMesajlar: 0, // caller numarası bilinmiyor; menü (gkm) bağlantısı kullanılır
   devamsizlik: 205,
+  mezuniyetAnaliz: 771, // StdGraduationAnalysis.aspx (doğrulandı)
+  mezuniyetOnay: 126, // ogrenci_mezuniyet_detay.aspx -> std_grd_detail_info.aspx (doğrulandı)
 } as const;
 
 const SECURE_KEY_STUDENT_NO = 'obs_student_no';
@@ -1389,6 +1464,281 @@ function parseMessages(html: string): ObsMessagesResult {
   return { messages, unreadCount };
 }
 
+// ─── O1: Mezuniyet Analizi Ayrıştırıcıları ───────────────────────────────────
+
+export function parseGraduationAnalysis(html: string, approvalHtml = ''): ObsGraduationAnalysis {
+  function getLabel(id: string): string {
+    const m = html.match(new RegExp(`id=['"][^'"]*${id}[^'"]*['"][^>]*>([^<]*)`, 'i'));
+    return m ? decodeEntities(m[1]).trim() : '';
+  }
+
+  const studentNo = getLabel('lblOgrNo').replace(/.*:\s*/, '');
+  const faculty = getLabel('lblFakAd');
+  const program = getLabel('lblProgAd');
+  const programType = getLabel('lblProgTur');
+  const registrationDate = getLabel('lblKayitTarih').replace(/.*:\s*/, '');
+  const registrationReason = getLabel('lblKayitNeden').replace(/.*:\s*/, '');
+  const studentStatus = getLabel('lblOgrenimDurum').replace(/.*:\s*/, '');
+  const curriculum = getLabel('lblMufredatAd').replace(/.*:\s*/, '');
+
+  const periodsStudied = parseInt(getLabel('lblOkuduguDonemSayisi').replace(/\D+/g, ''), 10) || 0;
+  const normMax = getLabel('lblNormalAzamiSure');
+  let normalDuration = 4;
+  let maxDuration = 7;
+  const nmParts = normMax.match(/(\d+)\s*\/\s*(\d+)/);
+  if (nmParts) {
+    normalDuration = parseInt(nmParts[1], 10);
+    maxDuration = parseInt(nmParts[2], 10);
+  }
+  const durationProgressPct = parseInt(getLabel('lblSureProgressPct').replace(/\D+/g, ''), 10) || 0;
+
+  const agnoStr = getLabel('lblAGNO').replace(/.*:\s*/, '').replace(',', '.');
+  const agno = agnoStr ? parseFloat(agnoStr) : null;
+  const completionWarning = getLabel('lblMezDurUyari');
+  const probableGraduationDate = getLabel('lblInfoMuhMez').replace(/.*:\s*/, '');
+  const chartWarning = getLabel('lblChartUyari');
+
+  // Criteria cards (corp-step)
+  const criteria: ObsGraduationCriterion[] = [];
+  // Match divs that have 'corp-step' as a standalone class or with '--' modifier (not 'corp-steps-')
+  const stepRe = /<div[^>]*class=['"]([^'"]*\bcorp-step\b[^'"]*)['"][^>]*>([\s\S]*?)<\/div>\s*<\/div>/gi;
+  let sm;
+  while ((sm = stepRe.exec(html)) !== null) {
+    const cls = sm[1];
+    const inner = sm[2];
+
+    // Skip group wrappers and sub-rows (e.g. "Ders durumları", "Başarısız dersleri")
+    if (cls.includes('--group') || cls.includes('-group')) continue;
+
+    const titleM = inner.match(/class=['"][^'"]*corp-step-title[^'"]*['"][^>]*>([^<]*)/i);
+    const valM = inner.match(/class=['"][^'"]*(?:corp-step-val|corp-step-uyari-val)[^'"]*['"][^>]*>([^<]*)/i);
+    const barM = inner.match(/class=['"][^'"]*corp-step-bar-pct[^'"]*['"][^>]*>([^<]*)/i);
+
+    if (titleM) {
+      const title = decodeEntities(titleM[1]).trim();
+      if (/başarısız\s*ders|ders\s*durum/i.test(title)) continue;
+
+      let rawVal = valM ? decodeEntities(valM[1]).trim() : '';
+      const hasWarning = rawVal.includes('(!)') || cls.includes('--fail') || cls.includes('--uyari');
+      const cleanVal = rawVal.replace(/\(!\)/g, '').trim();
+
+      let target: string | undefined = undefined;
+      let val = cleanVal;
+      if (cleanVal.includes('/')) {
+        const parts = cleanVal.split('/');
+        val = parts[0].trim();
+        target = parts[1].trim();
+      }
+
+      let percent: number | null = null;
+      if (barM) {
+        const pMatch = barM[1].match(/%?\s*(\d+)/);
+        if (pMatch) percent = parseInt(pMatch[1], 10);
+      } else if (target && !isNaN(parseFloat(val)) && !isNaN(parseFloat(target)) && parseFloat(target) > 0) {
+        percent = Math.round((parseFloat(val) / parseFloat(target)) * 100);
+      }
+
+      let status: 'ok' | 'warning' | 'fail' = 'ok';
+      if (cls.includes('--fail')) status = 'fail';
+      else if (cls.includes('--uyari')) status = 'warning';
+      else if (cls.includes('--ok')) status = 'ok';
+      else if (hasWarning) status = 'warning';
+
+      criteria.push({
+        key: title.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+        title,
+        value: val,
+        target,
+        percent,
+        status,
+        warning: hasWarning,
+        rawText: cleanVal,
+      });
+    }
+  }
+
+  // Counts from corp-step-group-row (e.g. "Müfredatta alınmayan: 11(!)")
+  let uncompletedCount = 0;
+  let failedCount = 0;
+  const groupRowRe = /<div class="corp-step-group-row">([\s\S]*?)<\/div>\s*<\/div>/gi;
+  let gm;
+  while ((gm = groupRowRe.exec(html)) !== null) {
+    const t = decodeEntities(gm[1]);
+    const numMatch = t.match(/(\d+)\s*\(!\)?/);
+    if (numMatch) {
+      const count = parseInt(numMatch[1], 10);
+      if (/alınmayan/i.test(t)) uncompletedCount = count;
+      if (/başarısız/i.test(t)) failedCount = count;
+    }
+  }
+
+  // Uncompleted courses (Alınmayan dersler)
+  const uncompletedCourses: ObsUncompletedCourse[] = [];
+  const mufSection = html.split(/lblMufHdrKod/i)[1]?.split(/lblBasHdrTerm/i)[0] || '';
+  const mufRowChunks = mufSection.split(/<div class="row rpt-row py-1">/i).slice(1);
+  for (const chunk of mufRowChunks) {
+    const cols = [...chunk.matchAll(/<div class="col-[^"]*">([\s\S]*?)<\/div>/gi)].map((c) =>
+      decodeEntities(c[1].replace(/<[^>]*>/g, '')).trim()
+    );
+    if (cols.length >= 5) {
+      const isGroupHeader = /gruba\s+ait|ders\s+alınmalıdır/i.test(cols[4]);
+      uncompletedCourses.push({
+        code: cols[0],
+        name: cols[1],
+        akts: parseInt(cols[2], 10) || 0,
+        type: cols[3],
+        groupDesc: cols[4],
+        isGroupHeader,
+      });
+    }
+  }
+
+  // Failed courses (Başarısız dersler)
+  const failedCourses: ObsFailedCourse[] = [];
+  const basSection = html.split(/lblBasHdrTerm/i)[1] || '';
+  const basRowChunks = basSection.split(/<div class="row rpt-row py-1">/i).slice(1);
+  for (const chunk of basRowChunks) {
+    const cols = [...chunk.matchAll(/<div class="col-[^"]*">([\s\S]*?)<\/div>/gi)].map((c) =>
+      decodeEntities(c[1].replace(/<[^>]*>/g, '')).trim()
+    );
+    if (cols.length >= 6) {
+      failedCourses.push({
+        term: cols[0],
+        code: cols[1],
+        name: cols[2],
+        akts: parseInt(cols[3], 10) || 0,
+        type: cols[4],
+        grade: cols[5],
+      });
+    }
+  }
+
+  if (uncompletedCount === 0) uncompletedCount = uncompletedCourses.length;
+  if (failedCount === 0) failedCount = failedCourses.length;
+
+  // Approval status from curPage=126
+  let approvalStatus = 'unknown';
+  let approvalMessage = 'Mezuniyet onay bilgisi bulunamadı.';
+  if (approvalHtml) {
+    if (/alert\.aspx/i.test(approvalHtml) || /henüz görüntülenememektedir|değerlendirme sürecine/i.test(approvalHtml)) {
+      approvalStatus = 'pending';
+      approvalMessage = 'Mezuniyet onay süreci henüz başlamadı.';
+    } else {
+      approvalStatus = 'active';
+      approvalMessage = 'Mezuniyet değerlendirme süreci aktif.';
+    }
+  }
+
+  return {
+    studentNo,
+    faculty,
+    program,
+    programType,
+    registrationDate,
+    registrationReason,
+    studentStatus,
+    curriculum,
+    periodsStudied,
+    normalDuration,
+    maxDuration,
+    durationProgressPct,
+    agno,
+    completionWarning,
+    probableGraduationDate,
+    chartWarning,
+    criteria,
+    uncompletedCount,
+    failedCount,
+    uncompletedCourses,
+    failedCourses,
+    approvalStatus,
+    approvalMessage,
+    fetchedAt: Date.now(),
+  };
+}
+
+export function calculateGraduationTarget(
+  currentAgno: number | null,
+  completedAkts: number,
+  totalRequiredAkts = 240,
+  targetAgno = 2.0,
+  failedCoursesCount = 0
+): GraduationProjection | null {
+  if (currentAgno == null || completedAkts <= 0 || completedAkts >= totalRequiredAkts) {
+    return null;
+  }
+  const remainingAkts = totalRequiredAkts - completedAkts;
+  const currentQuality = currentAgno * completedAkts;
+  const requiredTotalQuality = targetAgno * totalRequiredAkts;
+  const neededQuality = requiredTotalQuality - currentQuality;
+  const neededGpa = neededQuality / remainingAkts;
+
+  let neededAverageGrade = '';
+  if (neededGpa <= 1.0) neededAverageGrade = 'DD veya üzeri';
+  else if (neededGpa <= 1.5) neededAverageGrade = 'DC veya üzeri';
+  else if (neededGpa <= 2.0) neededAverageGrade = 'CC veya üzeri';
+  else if (neededGpa <= 2.5) neededAverageGrade = 'CB veya üzeri';
+  else if (neededGpa <= 3.0) neededAverageGrade = 'BB veya üzeri';
+  else if (neededGpa <= 3.5) neededAverageGrade = 'BA veya üzeri';
+  else if (neededGpa <= 4.0) neededAverageGrade = 'AA ortalama';
+  else neededAverageGrade = '4.00 üzeri (ek ders veya ders tekrarı ile yükseltme gerekli)';
+
+  const estimatedTermsRemaining = Math.max(1, Math.ceil((remainingAkts + failedCoursesCount * 4) / 30));
+
+  return {
+    neededAverageGrade,
+    targetAgno,
+    remainingAkts,
+    estimatedTermsRemaining,
+    message: `AGNO'yu ${targetAgno.toFixed(2)}'ye çıkarmak için kalan ${remainingAkts} AKTS'den ${neededAverageGrade} gerekiyor.`,
+  };
+}
+
+export function diffGraduation(
+  prev: ObsGraduationAnalysis | null,
+  curr: ObsGraduationAnalysis
+): GraduationChange[] {
+  if (!prev) return [];
+  const changes: GraduationChange[] = [];
+
+  if (curr.uncompletedCount < prev.uncompletedCount) {
+    changes.push({
+      type: 'courses_reduced',
+      title: 'Müfredat İlerlemesi',
+      description: `Alınmayan ders sayısı ${prev.uncompletedCount}'den ${curr.uncompletedCount}'e düştü.`,
+    });
+  }
+
+  if (curr.failedCount < prev.failedCount) {
+    changes.push({
+      type: 'courses_reduced',
+      title: 'Başarısız Dersler Azaldı',
+      description: `Başarısız ders sayısı ${prev.failedCount}'den ${curr.failedCount}'e düştü.`,
+    });
+  }
+
+  if (prev.agno != null && curr.agno != null && curr.agno > prev.agno) {
+    changes.push({
+      type: 'agno_improved',
+      title: 'AGNO Yükseldi',
+      description: `AGNO ${prev.agno.toFixed(2)}'den ${curr.agno.toFixed(2)}'ye yükseldi.`,
+    });
+  }
+
+  curr.criteria.forEach((c) => {
+    const oldC = prev.criteria.find((p) => p.key === c.key);
+    if (oldC && oldC.status !== 'ok' && c.status === 'ok') {
+      changes.push({
+        type: 'criteria_met',
+        title: 'Mezuniyet Kriteri Sağlandı',
+        description: `${c.title} kriteri başarıyla sağlandı (${c.value}${c.target ? '/' + c.target : ''}) ✅`,
+      });
+    }
+  });
+
+  return changes;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export const ObsService = {
@@ -1652,6 +2002,30 @@ export const ObsService = {
       body: body || 'Mesaj içeriği bulunamadı.',
     };
   },
+
+  /**
+   * MEZUNİYET DURUM ANALİZİ (O1)
+   * curPage=771 / StdGraduationAnalysis.aspx. 6 saat önbellek.
+   */
+  async getGraduationAnalysis(force = false): Promise<ObsGraduationAnalysis> {
+    const res = await cached(
+      'obs_graduation_analysis',
+      6 * 60 * 60 * 1000,
+      async () => {
+        const page = await openPage('Mezuniyet', PAGE.mezuniyetAnaliz);
+        let approvalHtml = '';
+        try {
+          const appPage = await openPage('Mezuniyet Onay', PAGE.mezuniyetOnay);
+          approvalHtml = appPage.html;
+        } catch {
+          // beklenen durum (alert.aspx)
+        }
+        return parseGraduationAnalysis(page.html, approvalHtml);
+      },
+      { force }
+    );
+    return res.data;
+  },
 };
 
 /**
@@ -1684,6 +2058,7 @@ function serialized<T extends (...args: any[]) => Promise<any>>(fn: T): T {
     'getCurriculum',
     'getMessages',
     'getMessageDetail',
+    'getGraduationAnalysis',
   ] as const
 ).forEach((name) => {
   const original = (ObsService as any)[name].bind(ObsService);

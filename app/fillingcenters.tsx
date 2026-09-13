@@ -286,7 +286,7 @@ export default function FillingCentersScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
       {/* Header */}
       <ScreenHeader
         title="Kart Dolum Noktaları"

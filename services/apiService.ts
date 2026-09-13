@@ -120,6 +120,18 @@ export interface RealtimeBusInfo {
   editDate?: string;
 }
 
+export interface OverviewRouteGeometry {
+  id: number;
+  routeCode: string;
+  title: string;
+  lines: [number, number][][]; // [ [lon, lat], ... ]
+}
+
+export interface LiveVehiclesSnapshot {
+  generatedUtc: string;
+  vehicles: RealtimeBusInfo[];
+}
+
 export interface StationBusInfo {
   busLineCode: string;
   busLineNo: string | number;
@@ -333,6 +345,28 @@ function unwrapEnvelope(data: any): any {
   return data;
 }
 
+/**
+ * Yeniden deneme sarmalayıcısı (I2): geçici ağ hatalarında katlanarak artan gecikmeyle tekrar dener.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: { maxRetries?: number; delayMs?: number; backoff?: number } = {}
+): Promise<T> {
+  const { maxRetries = 2, delayMs = 1000, backoff = 2 } = options;
+  let attempt = 0;
+  let currentDelay = delayMs;
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt > maxRetries) throw err;
+      await new Promise((resolve) => setTimeout(resolve, currentDelay));
+      currentDelay *= backoff;
+    }
+  }
+}
+
 async function fetchElazigKartJson(path: string, retryCount = 1): Promise<any> {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   const url = `${ELAZIGKART_BASE}${cleanPath}`;
@@ -441,14 +475,14 @@ function mapVehicle(v: any, fallbackRouteCode: string): RealtimeBusInfo | null {
   const dir = v.istikamet || v.direction || '';
   return {
     plaka: String(v.licencePlate || v.plaka || v.plate || '').trim(),
-    hiz: v.hiz !== undefined ? Number(v.hiz) : v.speed !== undefined ? Number(v.speed) : 0,
+    hiz: v.hiz !== undefined && v.hiz !== null ? Number(v.hiz) : v.speed !== undefined && v.speed !== null ? Number(v.speed) : undefined,
     istikamet: dir === 'G' ? 'Gidiş' : dir === 'D' ? 'Dönüş' : String(dir),
     yon: Number(v.gpsDir ?? v.yon ?? v.dir ?? v.heading ?? 0) || 0,
     enlem: lat,
     boylam: lng,
     hatkodu: fixMojibake(v.routeCode || fallbackRouteCode),
     validatorNo: v.validatorNo,
-    editDate: v.editDate || new Date().toISOString(),
+    editDate: v.editDate ? String(v.editDate) : undefined,
   };
 }
 
@@ -1052,6 +1086,74 @@ export const ApiService = {
         .filter((b): b is RealtimeBusInfo => !!b);
     } catch (e) {
       console.log('Tüm canlı araçlar API hatası:', e);
+      return [];
+    }
+  },
+
+  /**
+   * TÜM ŞEHİR HAT GÜZERGAHLARI (GET /api/wheremybus/overview)
+   * 44 hattın tüm GeoJSON polyline çizgileri tek istekte. 24 saat önbellek.
+   */
+  async getOverviewLines(): Promise<OverviewRouteGeometry[]> {
+    return cached('overview_route_lines', CACHE_TTL.ROUTES, async () => {
+      try {
+        const data = await fetchElazigKartJson('/api/wheremybus/overview');
+        const routes: any[] = Array.isArray(data?.routes) ? data.routes : [];
+        return routes.map((r: any) => ({
+          id: Number(r.id),
+          routeCode: fixMojibake(r.routeCode || '').trim(),
+          title: String(r.title || ''),
+          lines: Array.isArray(r.lines) ? r.lines : [],
+        }));
+      } catch (e) {
+        console.log('Overview hat çizgileri API hatası:', e);
+        return [];
+      }
+    }).then((res) => res.data);
+  },
+
+  /**
+   * ŞEHİRDEKİ TÜM CANLI OTOBÜSLER — TAZELİK ZAMAN DAMGALI (GET /api/wheremybus/overview/vehicles)
+   * { generatedUtc, vehicles } — 2-3 sn'de bir yenilenebilir.
+   */
+  async getAllLiveVehiclesDetailed(): Promise<LiveVehiclesSnapshot> {
+    try {
+      const data = await fetchElazigKartJson('/api/wheremybus/overview/vehicles');
+      const list: any[] = Array.isArray(data?.vehicles) ? data.vehicles : [];
+      const vehicles = list
+        .map((v: any) => mapVehicle({ ...v, latitude: v.lat, longitude: v.lon, gpsDir: v.dir }, v.routeCode || ''))
+        .filter((b): b is RealtimeBusInfo => !!b);
+      return {
+        generatedUtc: String(data?.generatedUtc || ''),
+        vehicles,
+      };
+    } catch (e) {
+      console.log('Tüm canlı araçlar detaylı API hatası:', e);
+      return { generatedUtc: '', vehicles: [] };
+    }
+  },
+
+  /**
+   * YAKINIMDAN GEÇENLER (G7)
+   * Kullanıcı konumuna 500m içindeki duraklar ve her durak için yaklaşan ilk 2 hat
+   */
+  async getNearDepartures(
+    lat: number,
+    lng: number,
+    maxStops = 4
+  ): Promise<{ stop: BusStation; departures: StationBusInfo[] }[]> {
+    try {
+      const nearby = await this.getNearbyStations(lat, lng);
+      const topStops = nearby.slice(0, maxStops);
+      const results = await Promise.all(
+        topStops.map(async (stop) => {
+          const deps = await this.getStationRemainingTime(stop.id);
+          return { stop, departures: deps.slice(0, 2) };
+        })
+      );
+      return results.filter((r) => r.departures.length > 0);
+    } catch (e) {
+      console.log('Yakınımdan geçenler hatası:', e);
       return [];
     }
   },

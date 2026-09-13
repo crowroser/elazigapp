@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiService } from './apiService';
 import { PrefsService } from './prefsService';
-import { ObsService, diffGrades } from './obsService';
+import { ObsService, diffGrades, diffGraduation } from './obsService';
 import { EventsService } from './eventsService';
 
 /**
@@ -446,6 +446,28 @@ export const NotificationService = {
                       await this.sendImmediate(
                         'Yeni Notlar Açıklandı',
                         `${changes.length} yeni ders notu/sınav sonucu açıklandı.`,
+                        '/obs',
+                        'grade'
+                      );
+                    }
+                  }
+                }
+              } catch {}
+            }
+
+            // O3: Mezuniyet durumu değişim kontrolü
+            if (prefs.gradeEnabled) {
+              try {
+                const gradRes = await ObsService.getGraduationAnalysis();
+                if (gradRes) {
+                  const prevGrad = await PrefsService.getGraduationSnapshot();
+                  await PrefsService.setGraduationSnapshot(gradRes);
+                  if (prevGrad) {
+                    const gradChanges = diffGraduation(prevGrad, gradRes);
+                    for (const ch of gradChanges) {
+                      await this.sendImmediate(
+                        `Mezuniyet: ${ch.title}`,
+                        ch.description,
                         '/obs',
                         'grade'
                       );

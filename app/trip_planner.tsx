@@ -231,7 +231,7 @@ export default function TripPlannerScreen() {
   }, [selectedPlan]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle={Theme.colors.statusBar} backgroundColor={C.background} />
       <ScreenHeader
         title="Nasıl Giderim?"
@@ -482,7 +482,7 @@ export default function TripPlannerScreen() {
 
 const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
-  content: { padding: Theme.spacing.lg, gap: 14 },
+  content: { padding: Theme.spacing.lg, paddingBottom: 32, gap: 14 },
   formCard: { gap: 12 },
   inputContainer: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   lineIndicator: { alignItems: 'center', justifyContent: 'center', width: 14, height: 74 },

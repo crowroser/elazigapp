@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Theme, themedStyles } from '../constants/Theme';
 import { ApiService, PrayerTime } from '../services/apiService';
+import { WidgetService } from '../services/widgetService';
 import { Card, LoadingState } from './ui';
 
 const C = Theme.colors;
@@ -27,6 +28,7 @@ export const PrayerCard: React.FC<{ compact?: boolean }> = ({ compact }) => {
           if (target < cur) target += 24 * 3600;
           setSecondsLeft(target - cur);
         }
+        WidgetService.syncWidgets().catch(() => {});
       }
       setLoading(false);
     })();

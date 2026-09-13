@@ -3,12 +3,13 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Linking } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { Theme, ThemeService, useAppTheme } from '@/constants/Theme';
 import { NotificationService } from '@/services/notificationService';
+import { WidgetService } from '@/services/widgetService';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -61,11 +62,13 @@ export default function RootLayout() {
   useEffect(() => {
     // Initial sync
     NotificationService.syncAllSchedules().catch(() => {});
+    WidgetService.syncWidgets().catch(() => {});
 
     // Periodic sync on app active
     const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
         NotificationService.syncAllSchedules().catch(() => {});
+        WidgetService.syncWidgets().catch(() => {});
       }
     });
 
@@ -79,9 +82,33 @@ export default function RootLayout() {
       }
     });
 
+    // Deep link navigation (G9: Widget durak bağlantısı)
+    const handleUrl = (url: string) => {
+      try {
+        const parsed = new URL(url.replace(/^[a-z0-9_-]+:\/\//i, 'https://app.local/'));
+        const path = parsed.pathname;
+        const stopId = parsed.searchParams.get('stopId') || parsed.searchParams.get('stationId');
+        if (path.includes('transit')) {
+          router.push({
+            pathname: '/(tabs)/transit' as any,
+            params: stopId ? { stopId } : {},
+          });
+        }
+      } catch {}
+    };
+
+    Linking.getInitialURL().then((url) => {
+      if (url) handleUrl(url);
+    });
+
+    const linkSub = Linking.addEventListener('url', (event) => {
+      if (event.url) handleUrl(event.url);
+    });
+
     return () => {
       appStateSub.remove();
       notifSub.remove();
+      linkSub.remove();
     };
   }, [router]);
 

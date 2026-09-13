@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_elkart_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -46,7 +47,7 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <View
+    <ImageView
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="#30476F"
@@ -94,8 +95,10 @@
             android:text="GÜNCELLE"
             android:textColor="#002045"
             android:background="#FFFFFF"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="4dp"
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
             android:textSize="9sp"
             android:textStyle="bold" />
     </LinearLayout>

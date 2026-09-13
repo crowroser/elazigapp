@@ -1,22 +1,39 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, StatusBar, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  StatusBar,
+  ActivityIndicator,
+  Dimensions,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import * as Location from 'expo-location';
+
 import { Theme, themedStyles, useAppTheme } from '../../constants/Theme';
-import { ApiService, WeatherData, CardBalanceResult, NewsItem, Pharmacy, StationBusInfo } from '../../services/apiService';
+import {
+  ApiService,
+  WeatherData,
+  CardBalanceResult,
+  NewsItem,
+  Pharmacy,
+  OutageItem,
+  StationBusInfo,
+  BusStation,
+  PrayerTime,
+} from '../../services/apiService';
 import { AuthService, UserProfile } from '../../services/authService';
 import { PrefsService, FavoriteStop } from '../../services/prefsService';
 import { cached } from '../../services/cacheService';
-import { ObsService, ObsTimetableEntry } from '../../services/obsService';
-import { WeatherWidget } from '../../components/WeatherWidget';
-import { ElazigKartCard } from '../../components/ElazigKartCard';
-import { PrayerCard } from '../../components/PrayerCard';
+import { ObsService, ObsTimetableEntry, ObsGraduationAnalysis } from '../../services/obsService';
 import { CardQueryModal } from '../../components/CardQueryModal';
 import { AuthProfileModal } from '../../components/AuthProfileModal';
-import { HomeCustomizerModal } from '../../components/HomeCustomizerModal';
-import { Card, SectionTitle, ListRow, Pill } from '../../components/ui';
-import { DEFAULT_HOME_LAYOUT } from '../../services/prefsService';
+import { Card, Pill, Countdown, LiveBadge } from '../../components/ui';
 
 const C = Theme.colors;
 
@@ -28,80 +45,114 @@ function greeting(): string {
   return 'İyi akşamlar';
 }
 
-interface QuickAction {
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function formatDistance(km: number | null | undefined): string {
+  if (km == null || Number.isNaN(km)) return '';
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
+
+interface QuickActionItem {
   id: string;
   title: string;
   icon: string;
   color: string;
   bg: string;
-  onPress: () => void;
+  route: string;
 }
 
 export default function HomeScreen() {
   useAppTheme();
   const router = useRouter();
-  const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [cardModal, setCardModal] = useState(false);
-  const [profileModal, setProfileModal] = useState(false);
+
+  // Profil & Kart
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [cardNo, setCardNo] = useState('');
   const [cardInfo, setCardInfo] = useState<CardBalanceResult | null>(null);
   const [cardBusy, setCardBusy] = useState(false);
-  const [cardUpdated, setCardUpdated] = useState('');
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [pharmacies, setPharmacies] = useState<Pharmacy[]>([]);
+  const [cardModal, setCardModal] = useState(false);
+  const [profileModal, setProfileModal] = useState(false);
+
+  // Hava & Namaz
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [prayerData, setPrayerData] = useState<{ times: PrayerTime[]; nextPrayer?: PrayerTime } | null>(null);
+
+  // Öğrenci (OBS)
   const [obsName, setObsName] = useState('');
   const [obsLoggedIn, setObsLoggedIn] = useState(false);
   const [todayLessons, setTodayLessons] = useState<ObsTimetableEntry[]>([]);
-  const [homeLayout, setHomeLayout] = useState<string[]>(DEFAULT_HOME_LAYOUT);
-  const [hiddenCards, setHiddenCards] = useState<string[]>([]);
-  const [customizerModal, setCustomizerModal] = useState(false);
+  const [obsDept, setObsDept] = useState('');
+  const [obsGrad, setObsGrad] = useState<ObsGraduationAnalysis | null>(null);
+  const [unseenGradeCount, setUnseenGradeCount] = useState(0);
+
+  // Favori Durak & Yaklaşan Otobüsler
   const [favoriteStop, setFavoriteStop] = useState<FavoriteStop | null>(null);
   const [favoriteStopBuses, setFavoriteStopBuses] = useState<StationBusInfo[]>([]);
   const [favoriteStopLoading, setFavoriteStopLoading] = useState(false);
-  const [favoriteRoutes, setFavoriteRoutes] = useState<string[]>([]);
-  const [favoriteRouteLiveCount, setFavoriteRouteLiveCount] = useState<number | null>(null);
+  const [stopCountdowns, setStopCountdowns] = useState<Record<string, number>>({});
 
+  // G7: Yakınımdan Geçenler
+  const [nearDepartures, setNearDepartures] = useState<{ stop: BusStation; departures: StationBusInfo[] }[]>([]);
+
+  // Şehir Verileri
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [pharmacies, setPharmacies] = useState<Pharmacy[]>([]);
+  const [outages, setOutages] = useState<OutageItem[]>([]);
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  // 1. Kart bakiyesi yükleme
   const loadCard = useCallback(async (no: string, silent = false) => {
     if (!no) return;
     if (!silent) setCardBusy(true);
-    const res = await ApiService.queryCardBalance(no);
-    if (res.success) {
-      setCardInfo(res);
-      const now = new Date();
-      setCardUpdated(now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
-      await PrefsService.setLastBalance({
-        cardNo: no,
-        balance: res.bakiye ?? 0,
-        pending: res.bekleyenBakiye ?? 0,
-        validity: res.gecerlilik || '',
-        fetchedAt: now.toISOString(),
-      });
+    try {
+      const res = await ApiService.queryCardBalance(no);
+      if (res.success) {
+        setCardInfo(res);
+        const now = new Date();
+        await PrefsService.setLastBalance({
+          cardNo: no,
+          balance: res.bakiye ?? 0,
+          pending: res.bekleyenBakiye ?? 0,
+          validity: res.gecerlilik || '',
+          fetchedAt: now.toISOString(),
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setCardBusy(false);
     }
-    setCardBusy(false);
   }, []);
 
-  const loadAll = useCallback(async () => {
-    const [w, n, p] = await Promise.all([ApiService.getWeather(), ApiService.getNews(), ApiService.getPharmacies()]);
-    setWeather(w);
-    setNews(n.slice(0, 3));
-    setPharmacies(p.slice(0, 2));
-  }, []);
-
+  // 2. Favori durak ve canlı yaklaşanları yükle
   const refreshFavorites = useCallback(async () => {
-    const [favStop, favRoutes] = await Promise.all([
-      PrefsService.getFavoriteStop(),
-      PrefsService.getFavoriteRoutes(),
-    ]);
+    const favStop = await PrefsService.getFavoriteStop();
     setFavoriteStop(favStop);
-    setFavoriteRoutes(favRoutes);
 
     if (favStop) {
       setFavoriteStopLoading(true);
       try {
         const buses = await ApiService.getStationRemainingTime(favStop.id);
         setFavoriteStopBuses(buses);
+        const cds: Record<string, number> = {};
+        buses.forEach((b) => {
+          const key = `${b.busLineCode}_${b.busPlate || b.busLineNo}`;
+          if (b.remainingTimeCurr != null) {
+            cds[key] = b.remainingTimeCurr * 60;
+          }
+        });
+        setStopCountdowns(cds);
       } catch (e) {
         console.log('Favori durak canlı veri hatası:', e);
       } finally {
@@ -110,41 +161,87 @@ export default function HomeScreen() {
     } else {
       setFavoriteStopBuses([]);
     }
-
-    if (favRoutes.length > 0) {
-      try {
-        const live = await ApiService.getRealtimeBusData(favRoutes[0]);
-        setFavoriteRouteLiveCount(live.length);
-      } catch {
-        setFavoriteRouteLiveCount(null);
-      }
-    } else {
-      setFavoriteRouteLiveCount(null);
-    }
   }, []);
 
+  // G5: Saniye geri sayım döngüsü
   useEffect(() => {
-    loadAll();
-    (async () => {
-      // Kayıtlı kart: önce yerel, sonra son bilinen bakiye, sonra canlı sorgu
-      const saved = await PrefsService.getElazigKartNo();
-      if (saved) {
-        setCardNo(saved);
-        const last = await PrefsService.getLastBalance();
-        if (last && last.cardNo === saved) {
-          setCardInfo({ success: true, bakiye: last.balance, bekleyenBakiye: last.pending, gecerlilik: last.validity });
-          setCardUpdated(new Date(last.fetchedAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
+    const timer = setInterval(() => {
+      setStopCountdowns((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const k in next) {
+          if (next[k] > 0) {
+            next[k] = next[k] - 1;
+            changed = true;
+          }
         }
-        loadCard(saved, true);
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 3. Genel verileri yükle
+  const loadGeneralData = useCallback(async () => {
+    const [w, p, n, ph, out] = await Promise.all([
+      ApiService.getWeather().catch(() => null),
+      ApiService.getPrayerTimesAsync().catch(() => null),
+      ApiService.getNews().catch(() => []),
+      ApiService.getPharmacies().catch(() => []),
+      ApiService.getOutages().catch(() => []),
+    ]);
+    setWeather(w);
+    setPrayerData(p);
+    setNews(n.slice(0, 3));
+    setPharmacies(ph.slice(0, 3));
+    setOutages(out.slice(0, 2));
+  }, []);
+
+  // 4. Konum ve G7 Yakınımdan Geçenler
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          ApiService.getNearDepartures(loc.coords.latitude, loc.coords.longitude, 3)
+            .then(setNearDepartures)
+            .catch(() => {});
+        }
+      } catch {
+        // ignore
       }
     })();
-  }, [loadAll, loadCard]);
+  }, []);
 
+  // 5. İlk açılış
+  useEffect(() => {
+    loadGeneralData();
+    (async () => {
+      const savedCard = await PrefsService.getElazigKartNo();
+      if (savedCard) {
+        setCardNo(savedCard);
+        const last = await PrefsService.getLastBalance();
+        if (last && last.cardNo === savedCard) {
+          setCardInfo({
+            success: true,
+            bakiye: last.balance,
+            bekleyenBakiye: last.pending,
+            gecerlilik: last.validity,
+          });
+        }
+        loadCard(savedCard, true);
+      }
+    })();
+  }, [loadGeneralData, loadCard]);
+
+  // Sekme odağında OBS ve favori güncellemesi
   useFocusEffect(
     useCallback(() => {
       const s = ObsService.getCachedStudent();
       if (s) {
         setObsName(s.fullName);
+        setObsDept(s.department || s.faculty || '');
         setObsLoggedIn(true);
       } else {
         ObsService.getCredentials().then((c) => {
@@ -153,25 +250,32 @@ export default function HomeScreen() {
         });
       }
 
-      PrefsService.getHomeLayout().then(setHomeLayout);
-      PrefsService.getHiddenCards().then(setHiddenCards);
+      // Cihazda önbellekli OBS özeti (ağ isteği yok): mezuniyet anlık görüntüsü + görülmemiş notlar
+      PrefsService.getGraduationSnapshot().then((g) => setObsGrad(g)).catch(() => {});
+      PrefsService.getUnseenGrades().then((u) => setUnseenGradeCount(u.length)).catch(() => {});
 
       ObsService.getCredentials().then(async (cred) => {
         if (cred) {
           try {
-            // Her sekme odağında OBS'ye gitmemek için ders programı 6 saat önbellekte tutulur
-            const { data: tt } = await cached('obs_timetable_home', 6 * 60 * 60 * 1000, () => ObsService.getTimetable());
+            const { data: tt } = await cached('obs_timetable_home', 6 * 60 * 60 * 1000, () =>
+              ObsService.getTimetable()
+            );
             if (tt && tt.entries) {
               const todayIdx = (new Date().getDay() + 6) % 7;
-              const today = tt.entries.filter((e) => e.dayIndex === todayIdx);
-              setTodayLessons(today);
+              setTodayLessons(tt.entries.filter((e) => e.dayIndex === todayIdx));
             }
+          } catch {}
+          // Mezuniyet ozeti (6 saat onbellek, OBS kuyrugunda serilestirilir)
+          try {
+            const g = await ObsService.getGraduationAnalysis();
+            // Snapshot yazilmaz: O3 degisim bildirimi (notificationService) onceki/yeni farkini kendisi tutar
+            if (g) setObsGrad(g);
           } catch {}
         }
       });
 
       refreshFavorites();
-      const interval = setInterval(refreshFavorites, 30000);
+      const interval = setInterval(refreshFavorites, 20000);
       return () => clearInterval(interval);
     }, [refreshFavorites])
   );
@@ -179,28 +283,17 @@ export default function HomeScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
-      loadAll(),
-      cardNo ? loadCard(cardNo) : Promise.resolve(),
+      loadGeneralData(),
       refreshFavorites(),
-      PrefsService.getHomeLayout().then(setHomeLayout),
-      PrefsService.getHiddenCards().then(setHiddenCards),
+      cardNo ? loadCard(cardNo) : Promise.resolve(),
     ]);
     setRefreshing(false);
-  };
-
-  const handleProfileUpdated = async (prof: UserProfile | null) => {
-    setProfile(prof);
-    if (prof?.elazigKartNo && prof.elazigKartNo !== cardNo) {
-      setCardNo(prof.elazigKartNo);
-      loadCard(prof.elazigKartNo);
-    }
   };
 
   const handleCardResult = async (res: CardBalanceResult, queriedNo: string) => {
     if (!res.success) return;
     setCardInfo(res);
     setCardNo(queriedNo);
-    setCardUpdated(new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
     await PrefsService.setElazigKartNo(queriedNo);
     await PrefsService.setLastBalance({
       cardNo: queriedNo,
@@ -212,588 +305,726 @@ export default function HomeScreen() {
     if (profile) AuthService.updateUserProfile(profile.uid, { elazigKartNo: queriedNo }).catch(() => {});
   };
 
-  const handleSaveLayout = async (layout: string[], hidden: string[]) => {
-    setHomeLayout(layout);
-    setHiddenCards(hidden);
-    await PrefsService.setHomeLayout(layout);
-    await PrefsService.setHiddenCards(hidden);
-  };
-
   const firstName = (profile?.displayName || obsName || '').split(' ')[0];
 
-  const actions: QuickAction[] = [
-    { id: 'transit', title: 'Otobüsüm Nerede', icon: 'bus-marker', color: C.primary, bg: C.surfaceVariant, onPress: () => router.push('/(tabs)/transit') },
-    { id: 'howtogo', title: 'Nasıl Giderim', icon: 'routes', color: C.success, bg: C.successBg, onPress: () => router.push('/trip_planner' as any) },
-    { id: 'obs', title: 'OBS Notlarım', icon: 'school', color: C.uniRed, bg: C.uniRedSoft, onPress: () => router.push('/obs' as any) },
-    { id: 'dining', title: 'Yemekhane', icon: 'silverware-fork-knife', color: C.accentDark, bg: C.accentBg, onPress: () => router.push('/(tabs)/university') },
-    { id: 'pharmacy', title: 'Nöbetçi Eczane', icon: 'medical-bag', color: C.danger, bg: C.dangerBg, onPress: () => router.push('/(tabs)/services') },
-    { id: 'outage', title: 'Kesintiler', icon: 'flash-alert', color: C.warning, bg: C.warningBg, onPress: () => router.push('/(tabs)/services') },
-    { id: 'events', title: 'Etkinlikler', icon: 'ticket-confirmation-outline', color: C.info, bg: C.infoBg, onPress: () => router.push('/(tabs)/news') },
-    { id: 'classifieds', title: 'İlan Panosu', icon: 'bulletin-board', color: C.uniRed, bg: C.uniRedSoft, onPress: () => router.push('/classifieds' as any) },
-    { id: 'assistant', title: 'Gakgoş Asistan', icon: 'robot-happy-outline', color: C.primaryLight, bg: C.surfaceVariant, onPress: () => router.push('/assistant' as any) },
+  // Hızlı erişim çubukları (DESIGN_PLAN §4: 4'lü tek satır, yatay kaydırma)
+  const quickActions: QuickActionItem[] = [
+    {
+      id: 'howtogo',
+      title: 'Nasıl Giderim',
+      icon: 'routes',
+      color: C.success,
+      bg: C.successBg,
+      route: '/trip_planner',
+    },
+    {
+      id: 'transit',
+      title: 'Otobüsüm Nerede',
+      icon: 'bus-marker',
+      color: C.primary,
+      bg: C.surfaceVariant,
+      route: '/(tabs)/transit',
+    },
+    {
+      id: 'obs',
+      title: 'OBS & Mezuniyet',
+      icon: 'school',
+      color: C.uniRed,
+      bg: C.uniRedSoft,
+      route: '/obs',
+    },
+    {
+      id: 'pharmacy',
+      title: 'Nöbetçi Eczane',
+      icon: 'medical-bag',
+      color: C.danger,
+      bg: C.dangerBg,
+      route: '/(tabs)/services',
+    },
+    {
+      id: 'events',
+      title: 'Etkinlikler',
+      icon: 'ticket-confirmation-outline',
+      color: C.info,
+      bg: C.infoBg,
+      route: '/(tabs)/services',
+    },
+    {
+      id: 'dining',
+      title: 'Yemekhane',
+      icon: 'silverware-fork-knife',
+      color: C.accentDark,
+      bg: C.accentBg,
+      route: '/(tabs)/university',
+    },
   ];
 
-  const renderSection = (id: string) => {
-    if (hiddenCards.includes(id)) return null;
-
-    switch (id) {
-      case 'student': {
-        if (!obsLoggedIn && todayLessons.length === 0) {
-          return (
-            <TouchableOpacity
-              key="student"
-              style={styles.studentPromoCard}
-              onPress={() => router.push('/obs' as any)}
-              activeOpacity={0.85}
-            >
-              <View style={styles.studentPromoLeft}>
-                <Ionicons name="school" size={22} color={C.uniRed} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.studentPromoTitle}>Fırat OBS • Öğrenci Modu</Text>
-                  <Text style={styles.studentPromoSub}>Ders programınızı ve notlarınızı ana sayfada görmek için giriş yapın</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
-            </TouchableOpacity>
-          );
-        }
-
-        const nowStr = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-        const upcoming = todayLessons.filter((l) => (l.startTime || '99:99') >= nowStr);
-        const nextLesson = upcoming[0] || todayLessons[0];
-
-        return (
-          <TouchableOpacity
-            key="student"
-            style={styles.studentCard}
-            onPress={() => router.push('/obs' as any)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.studentCardHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="school" size={16} color={C.uniRed} />
-                <Text style={styles.studentCardTitle}>Fırat OBS • Ders Takibi</Text>
-              </View>
-              <View style={styles.studentBadge}>
-                <Text style={styles.studentBadgeText}>ÖĞRENCİ</Text>
-              </View>
-            </View>
-            {todayLessons.length > 0 && nextLesson ? (
-              <View style={styles.studentLessonContent}>
-                <Text style={styles.studentLessonNext}>
-                  {upcoming.length > 0 ? 'Sıradaki Ders' : 'Bugünkü Dersler'}
-                </Text>
-                <Text style={styles.studentLessonName} numberOfLines={1}>{nextLesson.courseName}</Text>
-                <View style={styles.studentLessonMetaRow}>
-                  <View style={styles.studentMetaChip}>
-                    <Ionicons name="time-outline" size={12} color={C.primary} />
-                    <Text style={styles.studentMetaText}>{nextLesson.startTime} - {nextLesson.endTime}</Text>
-                  </View>
-                  {nextLesson.room ? (
-                    <View style={styles.studentMetaChip}>
-                      <Ionicons name="location-outline" size={12} color={C.accent} />
-                      <Text style={styles.studentMetaText}>{nextLesson.room}</Text>
-                    </View>
-                  ) : null}
-                  <Text style={styles.studentTotalCount}>Bugün: {todayLessons.length} ders</Text>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.studentEmptyRow}>
-                <Ionicons name="calendar-outline" size={18} color="#16a34a" />
-                <Text style={styles.studentEmptyText}>Bugün dersiniz bulunmuyor 🎉</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        );
-      }
-
-      case 'card':
-        return (
-          <ElazigKartCard
-            key="card"
-            balance={cardInfo?.success ? cardInfo.bakiye : undefined}
-            pending={cardInfo?.bekleyenBakiye}
-            validity={cardInfo?.gecerlilik}
-            cardNo={cardNo}
-            cardHolder={profile?.displayName || obsName || undefined}
-            loading={cardBusy}
-            updatedAt={cardUpdated}
-            onQueryPress={() => setCardModal(true)}
-            onTopUpPress={() => setCardModal(true)}
-          />
-        );
-
-      case 'favoriteStop':
-        if (!favoriteStop) return null;
-        return (
-          <View key="favoriteStop" style={styles.favStopCard}>
-            <View style={styles.favStopHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                <Ionicons name="star" size={16} color="#f59e0b" />
-                <Text style={styles.favStopSectionTitle}>Benim Durağım</Text>
-                <View style={styles.liveTagSmall}>
-                  <View style={styles.liveDotSmall} />
-                  <Text style={styles.liveTextSmall}>CANLI</Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                onPress={() => router.push('/(tabs)/transit')}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.favStopLink}>Haritada Gör</Text>
-                <Ionicons name="chevron-forward" size={13} color={C.primary} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.favStopName} numberOfLines={1}>{favoriteStop.name}</Text>
-
-            {favoriteStopLoading && favoriteStopBuses.length === 0 ? (
-              <View style={styles.favStopLoadingRow}>
-                <ActivityIndicator size="small" color={C.primary} />
-                <Text style={styles.favStopLoadingText}>Yaklaşan otobüsler yükleniyor...</Text>
-              </View>
-            ) : favoriteStopBuses.length > 0 ? (
-              <View style={styles.favBusesList}>
-                {favoriteStopBuses.slice(0, 3).map((bus, idx) => (
-                  <View key={`${bus.busLineCode}-${idx}`} style={styles.favBusRow}>
-                    <View style={styles.favBusLineBadge}>
-                      <Text style={styles.favBusLineBadgeText}>
-                        HAT {bus.busLineNo || bus.busLineCode || '—'}
-                      </Text>
-                    </View>
-                    <Text style={styles.favBusDest} numberOfLines={1}>
-                      {bus.busLineLongName || bus.busLineCode || '—'}
-                    </Text>
-                    <View style={styles.favBusMinsBadge}>
-                      <Text style={styles.favBusMinsText}>
-                        {bus.remainingTimeCurr != null ? `${bus.remainingTimeCurr} dk` : '—'}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.favStopEmpty}>
-                Şu an bu durağa yaklaşan aktif otobüs bulunmuyor.
-              </Text>
-            )}
-          </View>
-        );
-
-      case 'quickActions':
-        return (
-          <View key="quickActions">
-            <View style={styles.sectionHeaderRow}>
-              <SectionTitle title="Hızlı Erişim" />
-              {favoriteRoutes.length > 0 && favoriteRouteLiveCount !== null && (
-                <TouchableOpacity
-                  style={styles.favRouteLiveBadge}
-                  onPress={() => router.push('/(tabs)/transit')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.liveDotSmall} />
-                  <Text style={styles.favRouteLiveText}>
-                    Hat {favoriteRoutes[0]}: {favoriteRouteLiveCount} Canlı Araç
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-            <View style={styles.grid}>
-              {actions.map((a) => (
-                <TouchableOpacity key={a.id} style={styles.gridItem} onPress={a.onPress} activeOpacity={0.8}>
-                  <View style={[styles.gridIcon, { backgroundColor: a.bg }]}>
-                    <MaterialCommunityIcons name={a.icon as any} size={24} color={a.color} />
-                  </View>
-                  <Text style={styles.gridLabel} numberOfLines={2}>
-                    {a.title}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity activeOpacity={0.9} onPress={() => router.push('/(tabs)/transit')} style={styles.transitBanner}>
-              <View style={{ flex: 1 }}>
-                <View style={styles.liveTag}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>CANLI</Text>
-                </View>
-                <Text style={styles.bannerTitle}>Otobüsler haritada</Text>
-                <Text style={styles.bannerSub}>Yaklaşan otobüsler, sefer saatleri ve güzergahlar</Text>
-              </View>
-              <MaterialCommunityIcons name="map-marker-radius" size={44} color="rgba(255,255,255,0.9)" />
-            </TouchableOpacity>
-          </View>
-        );
-
-      case 'weather':
-        return (
-          <View key="weather" style={styles.rowPad}>
-            <WeatherWidget weather={weather} />
-          </View>
-        );
-
-      case 'prayer':
-        return <PrayerCard key="prayer" compact />;
-
-      case 'pharmacies':
-        if (pharmacies.length === 0) return null;
-        return (
-          <View key="pharmacies">
-            <SectionTitle title="Bugün Nöbetçi" subtitle="Elazığ merkez eczaneleri" action="Tümü" onAction={() => router.push('/(tabs)/services')} />
-            <View style={styles.rowPad}>
-              <Card padded={false} style={{ paddingHorizontal: 14 }}>
-                {pharmacies.map((p, i) => (
-                  <ListRow
-                    key={p.id}
-                    icon="medical-bag"
-                    iconColor={C.danger}
-                    iconBg={C.dangerBg}
-                    title={p.name}
-                    subtitle={p.address}
-                    last={i === pharmacies.length - 1}
-                    onPress={() => router.push('/(tabs)/services')}
-                  />
-                ))}
-              </Card>
-            </View>
-          </View>
-        );
-
-      case 'news':
-        if (news.length === 0) return null;
-        return (
-          <View key="news">
-            <SectionTitle title="Son Haberler" action="Tümü" onAction={() => router.push('/(tabs)/news')} />
-            <View style={styles.rowPad}>
-              <Card padded={false} style={{ paddingHorizontal: 14 }}>
-                {news.map((n, i) => (
-                  <ListRow key={n.id} icon="newspaper-variant-outline" iconColor={C.info} iconBg={C.infoBg} title={n.title} subtitle={n.date} last={i === news.length - 1} onPress={() => router.push('/(tabs)/news')} />
-                ))}
-              </Card>
-            </View>
-          </View>
-        );
-
-      default:
-        return null;
-    }
-  };
+  // Namaz kalan süre
+  const prayerCountdown = useMemo(() => {
+    if (!prayerData?.nextPrayer?.time) return '';
+    const [h, m] = prayerData.nextPrayer.time.split(':').map(Number);
+    const now = new Date();
+    let diff = h * 60 + m - (now.getHours() * 60 + now.getMinutes());
+    if (diff < 0) diff += 24 * 60;
+    const diffH = Math.floor(diff / 60);
+    const diffM = diff % 60;
+    return diffH > 0 ? `${diffH} sa ${diffM} dk kaldı` : `${diffM} dk kaldı`;
+  }, [prayerData]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <StatusBar barStyle={Theme.colors.statusBar} backgroundColor={C.background} />
+
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.primary]} tintColor={C.primary} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[C.primary]}
+            tintColor={C.primary}
+          />
+        }
       >
-        {/* Üst bar */}
+        {/* ── 1. ÜST BAR: Selamlama, Hava Durumu, Bildirim, Profil ───────── */}
         <View style={styles.topBar}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greet}>{greeting()}{firstName ? `, ${firstName}` : ''}</Text>
-            <View style={styles.cityRow}>
-              <Ionicons name="location" size={13} color={C.accent} />
-              <Text style={styles.city}>Elazığ</Text>
+            <Text style={styles.greet}>
+              {greeting()}{firstName ? `, ${firstName}` : ''}
+            </Text>
+            <View style={styles.weatherRow}>
+              {weather ? (
+                <Text style={styles.weatherText}>
+                  ☀ {weather.tempC}°C · {weather.conditionTr || weather.conditionText}
+                </Text>
+              ) : (
+                <Text style={styles.weatherText}>📍 Elazığ</Text>
+              )}
             </View>
           </View>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setCustomizerModal(true)} accessibilityLabel="Düzeni Özelleştir">
-            <Ionicons name="options-outline" size={20} color={C.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications' as any)} accessibilityLabel="Bildirimler">
+
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => router.push('/notifications' as any)}
+            accessibilityLabel="Bildirimler"
+          >
             <Ionicons name="notifications-outline" size={20} color={C.primary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.avatar} onPress={() => setProfileModal(true)} activeOpacity={0.85}>
-            <Text style={styles.avatarText}>{(profile?.displayName || obsName || 'M').charAt(0).toUpperCase()}</Text>
+
+          <TouchableOpacity
+            style={styles.avatarBtn}
+            onPress={() => setProfileModal(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.avatarText}>
+              {(profile?.displayName || obsName || 'M').charAt(0).toUpperCase()}
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Dinamik Kart Sıralaması */}
-        {homeLayout.map((id) => renderSection(id))}
+        {/* ── 2. "BENİM DURAĞIM" / YAKINIMDAKİ DURAK (G5 geri sayım, G7) ──── */}
+        {(() => {
+          const nearest = !favoriteStop && nearDepartures.length > 0 ? nearDepartures[0] : null;
+          const title = favoriteStop
+            ? `Benim Durağım · ${favoriteStop.name}`
+            : nearest
+            ? `Yakınımdaki Durak · ${nearest.stop.name}`
+            : 'Benim Durağım';
+          const rows = favoriteStop
+            ? favoriteStopBuses.slice(0, 2).map((bus) => ({
+                key: `${bus.busLineCode}_${bus.busPlate || bus.busLineNo}`,
+                line: bus.busLineNo || bus.busLineCode,
+                name: bus.busLineLongName || bus.busLineCode,
+                secs: stopCountdowns[`${bus.busLineCode}_${bus.busPlate || bus.busLineNo}`],
+              }))
+            : nearest
+            ? nearest.departures.slice(0, 2).map((d, i) => ({
+                key: `${d.busLineCode}_${i}`,
+                line: d.busLineNo || d.busLineCode,
+                name: d.busLineLongName || d.busLineCode,
+                secs: (d.remainingTimeCurr || 0) * 60,
+              }))
+            : [];
+          return (
+            <Card style={styles.favStopCard}>
+              <View style={styles.favStopHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <LiveBadge state={rows.length > 0 ? 'live' : 'off'} text="canlı" />
+                  <Text style={styles.favStopTitle} numberOfLines={1}>{title}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => router.push('/(tabs)/transit')}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
+                >
+                  <Text style={styles.favStopLink}>Harita</Text>
+                  <Ionicons name="chevron-forward" size={13} color={C.primary} />
+                </TouchableOpacity>
+              </View>
 
-        <View style={{ height: 24 }} />
+              {rows.length > 0 ? (
+                <View style={{ gap: 6 }}>
+                  {rows.map((r) => (
+                    <View key={r.key} style={styles.favBusItem}>
+                      <View style={styles.favBusBadge}>
+                        <Text style={styles.favBusBadgeText}>HAT {r.line}</Text>
+                      </View>
+                      <Text style={styles.favBusName} numberOfLines={1}>{r.name}</Text>
+                      <Countdown seconds={r.secs} compact />
+                    </View>
+                  ))}
+                </View>
+              ) : favoriteStop && favoriteStopLoading ? (
+                <View style={styles.favLoadingRow}>
+                  <ActivityIndicator size="small" color={Theme.colors.live} />
+                  <Text style={styles.favLoadingText}>Yaklaşan otobüsler sorgulanıyor...</Text>
+                </View>
+              ) : favoriteStop ? (
+                <Text style={styles.favEmptyText}>Şu an durağa yaklaşan otobüs görünmüyor.</Text>
+              ) : (
+                <TouchableOpacity
+                  style={styles.setFavStopBox}
+                  onPress={() => router.push('/(tabs)/transit')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="star-outline" size={18} color={C.textMuted} />
+                  <Text style={styles.setFavStopText}>
+                    Haritadan durağınızı yıldızlayın, yaklaşan otobüsleri burada canlı izleyin.
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </Card>
+          );
+        })()}
+
+        {/* ── 3. YAN YANA İKİ KART: ELAZIĞKART & NAMAZ ────────────────────── */}
+        <View style={styles.sideBySideRow}>
+          <TouchableOpacity
+            style={[styles.smallCard, { flex: 1 }]}
+            onPress={() => setCardModal(true)}
+            activeOpacity={0.88}
+          >
+            <View style={styles.smallCardHeader}>
+              <MaterialCommunityIcons name="credit-card-chip-outline" size={18} color={C.primary} />
+              <Text style={styles.smallCardLabel}>ElazığKart</Text>
+            </View>
+            <Text style={styles.cardBalanceText}>
+              {cardInfo?.bakiye !== undefined ? `₺${cardInfo.bakiye.toFixed(2)}` : '₺ —'}
+            </Text>
+            <Text style={styles.smallCardFooter} numberOfLines={1}>
+              {cardBusy ? 'Sorgulanıyor...' : cardNo ? `Kart: ${cardNo.slice(-4)}` : 'Kart sorgula'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.smallCard, { flex: 1 }]}
+            onPress={() => router.push('/(tabs)/services')}
+            activeOpacity={0.88}
+          >
+            <View style={styles.smallCardHeader}>
+              <MaterialCommunityIcons name="mosque" size={18} color={Theme.colors.accentDark} />
+              <Text style={styles.smallCardLabel} numberOfLines={1}>
+                {prayerData?.nextPrayer ? `Namaz · ${prayerData.nextPrayer.nameTr}` : 'Namaz Vakti'}
+              </Text>
+            </View>
+            <Text style={styles.prayerTimeText}>{prayerData?.nextPrayer?.time || '—:—'}</Text>
+            <Text style={styles.smallCardFooter} numberOfLines={1}>{prayerCountdown || 'Elazığ'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── 4. FIRAT OBS ÖĞRENCİ KARTI ───────────────────────────────────── */}
+        {(() => {
+          if (!obsLoggedIn) {
+            return (
+              <TouchableOpacity
+                style={styles.obsPromo}
+                onPress={() => router.push('/obs' as any)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.todayIconCircle, { backgroundColor: C.uniRedSoft }]}>
+                  <Ionicons name="school" size={16} color={C.uniRed} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.todayRowTitle}>Fırat OBS · Öğrenci modu</Text>
+                  <Text style={styles.todayRowSub} numberOfLines={1}>
+                    Notlar, ders programı ve mezuniyet durumu için giriş yapın
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={14} color={C.textMuted} />
+              </TouchableOpacity>
+            );
+          }
+          const nowStr = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+          const upcoming = todayLessons.filter((l) => (l.endTime || l.startTime || '99:99') >= nowStr);
+          const nextLesson = upcoming[0] || null;
+          const aktsCrit = obsGrad?.criteria.find((c) => c.key === 'akts');
+          const agnoText = obsGrad?.agno != null ? obsGrad.agno.toFixed(2).replace('.', ',') : '—';
+          const termText = obsGrad ? `${obsGrad.periodsStudied}/${obsGrad.maxDuration}` : '—';
+          const aktsText = aktsCrit?.value ? `${aktsCrit.value}/${aktsCrit.target || 240}` : '—';
+          return (
+            <TouchableOpacity
+              style={styles.obsCard}
+              onPress={() => router.push('/obs' as any)}
+              activeOpacity={0.88}
+            >
+              <View style={styles.obsCardHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <Ionicons name="school" size={15} color={C.uniRed} />
+                  <Text style={styles.obsCardTitle} numberOfLines={1}>
+                    Fırat OBS{obsDept ? ` · ${obsDept}` : ''}
+                  </Text>
+                </View>
+                {unseenGradeCount > 0 ? (
+                  <Pill label={`${unseenGradeCount} YENİ NOT`} color={C.uniRed} bg={C.uniRedSoft} />
+                ) : (
+                  <Ionicons name="chevron-forward" size={14} color={C.textMuted} />
+                )}
+              </View>
+              <View style={styles.obsStatsRow}>
+                <View style={styles.obsStat}>
+                  <Text style={styles.obsStatValue}>{agnoText}</Text>
+                  <Text style={styles.obsStatLabel}>AGNO</Text>
+                </View>
+                <View style={styles.obsStatDivider} />
+                <View style={styles.obsStat}>
+                  <Text style={styles.obsStatValue}>{termText}</Text>
+                  <Text style={styles.obsStatLabel}>DÖNEM</Text>
+                </View>
+                <View style={styles.obsStatDivider} />
+                <View style={styles.obsStat}>
+                  <Text style={styles.obsStatValue}>{aktsText}</Text>
+                  <Text style={styles.obsStatLabel}>AKTS</Text>
+                </View>
+              </View>
+              <View style={styles.obsLessonRow}>
+                <Ionicons name="time-outline" size={13} color={nextLesson ? C.uniRed : C.textMuted} />
+                <Text style={styles.obsLessonText} numberOfLines={1}>
+                  {nextLesson
+                    ? `${nextLesson.startTime} ${nextLesson.courseName}${nextLesson.room ? ` · ${nextLesson.room}` : ''}`
+                    : todayLessons.length > 0
+                    ? `Bugünkü ${todayLessons.length} ders tamamlandı`
+                    : obsGrad
+                    ? 'Bugün ders yok'
+                    : 'Özet için OBS ekranını bir kez açın'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })()}
+
+        {/* ── 5. "BUGÜN": ECZANE + KESİNTİ ────────────────────────────────── */}
+        <View style={styles.todaySection}>
+          <Text style={styles.sectionHeaderTitle}>Bugün</Text>
+          <Card style={styles.todayCard}>
+            {pharmacies.length > 0 && (
+              <TouchableOpacity style={styles.todayRow} onPress={() => router.push('/(tabs)/services')}>
+                <View style={[styles.todayIconCircle, { backgroundColor: C.dangerBg }]}>
+                  <MaterialCommunityIcons name="medical-bag" size={16} color={C.danger} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.todayRowTitle} numberOfLines={1}>Nöbetçi: {pharmacies[0].name}</Text>
+                  <Text style={styles.todayRowSub} numberOfLines={1}>{pharmacies[0].address}</Text>
+                </View>
+                <Pill label="24 SAAT" color={C.danger} bg={C.dangerBg} />
+              </TouchableOpacity>
+            )}
+
+            {outages.length > 0 ? (
+              <TouchableOpacity style={styles.todayRow} onPress={() => router.push('/(tabs)/services')}>
+                <View style={[styles.todayIconCircle, { backgroundColor: C.warningBg }]}>
+                  <MaterialCommunityIcons name="flash-alert" size={16} color={C.warning} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.todayRowTitle} numberOfLines={1}>{outages[0].title}</Text>
+                  <Text style={styles.todayRowSub}>{outages[0].startTime} – {outages[0].endTime}</Text>
+                </View>
+                <Pill label="KESİNTİ" color={C.warning} bg={C.warningBg} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.todayRow}>
+                <View style={[styles.todayIconCircle, { backgroundColor: C.successBg }]}>
+                  <MaterialCommunityIcons name="flash-outline" size={16} color={C.success} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.todayRowTitle}>Planlı kesinti yok</Text>
+                  <Text style={styles.todayRowSub} numberOfLines={1}>Fırat EDAŞ · Elazığ merkez</Text>
+                </View>
+              </View>
+            )}
+          </Card>
+        </View>
+
+        {/* ── 6. HIZLI ERİŞİM ──────────────────────────────────────────────── */}
+        <View style={styles.quickActionsSection}>
+          <Text style={styles.sectionHeaderTitle}>Hızlı Erişim</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.quickActionsScroll}
+          >
+            {quickActions.map((a) => (
+              <TouchableOpacity
+                key={a.id}
+                style={styles.quickActionItem}
+                onPress={() => router.push(a.route as any)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.quickActionIcon, { backgroundColor: a.bg }]}>
+                  <MaterialCommunityIcons name={a.icon as any} size={20} color={a.color} />
+                </View>
+                <Text style={styles.quickActionLabel} numberOfLines={1}>{a.title}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        <View style={{ height: 8 }} />
       </ScrollView>
 
+      {/* Kart Sorgulama & Bakiye Modalı */}
       <CardQueryModal
         visible={cardModal}
         onClose={() => setCardModal(false)}
         initialCardNo={cardNo}
         onSuccess={handleCardResult}
       />
-      <AuthProfileModal visible={profileModal} onClose={() => setProfileModal(false)} onProfileUpdated={handleProfileUpdated} />
-      <HomeCustomizerModal
-        visible={customizerModal}
-        onClose={() => setCustomizerModal(false)}
-        layout={homeLayout}
-        hidden={hiddenCards}
-        onSave={handleSaveLayout}
+
+      {/* Kullanıcı Profil Modalı */}
+      <AuthProfileModal
+        visible={profileModal}
+        onClose={() => setProfileModal(false)}
+        onProfileUpdated={(p) => {
+          setProfile(p);
+          if (p?.elazigKartNo && p.elazigKartNo !== cardNo) {
+            setCardNo(p.elazigKartNo);
+            loadCard(p.elazigKartNo);
+          }
+        }}
       />
     </SafeAreaView>
   );
 }
 
-const styles = themedStyles(() => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.background },
-  content: { paddingBottom: 16, gap: Theme.spacing.md },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: Theme.spacing.lg, paddingTop: 10, paddingBottom: 4 },
-  greet: { ...Theme.text.h1, color: C.textPrimary },
-  cityRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  city: { ...Theme.text.small, color: C.textMuted, fontWeight: '700' },
-  iconBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.cardBorder, alignItems: 'center', justifyContent: 'center' },
-  avatar: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontWeight: '800', fontSize: 16 },
-  rowPad: { paddingHorizontal: Theme.spacing.lg },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Theme.spacing.lg, gap: 10 },
-  gridItem: { width: '22.7%', alignItems: 'center', gap: 6 },
-  gridIcon: { width: 58, height: 58, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  gridLabel: { fontSize: 11, fontWeight: '700', color: C.textSecondary, textAlign: 'center', lineHeight: 14 },
-  transitBanner: { marginHorizontal: Theme.spacing.lg, marginTop: 6, backgroundColor: C.primaryContainer, borderRadius: Theme.radius.lg, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 12, ...Theme.shadows.md },
-  liveTag: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.14)', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, marginBottom: 6 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ADE80' },
-  liveText: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.6 },
-  bannerTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  bannerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 },
-  favStopCard: {
-    marginHorizontal: Theme.spacing.lg,
-    backgroundColor: C.surface,
-    borderRadius: Theme.radius.lg,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    ...Theme.shadows.sm,
-  },
-  favStopHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  favStopSectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: C.primary,
-  },
-  liveTagSmall: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Theme.colors.successBg,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  liveDotSmall: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#16a34a',
-  },
-  liveTextSmall: {
-    color: '#16a34a',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  favStopLink: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: C.primary,
-  },
-  favStopName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: C.textPrimary,
-    marginBottom: 10,
-  },
-  favStopLoadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-  },
-  favStopLoadingText: {
-    fontSize: 12,
-    color: C.textMuted,
-  },
-  favBusesList: {
-    gap: 8,
-  },
-  favBusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: C.surfaceSubtle,
-    borderRadius: Theme.radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  favBusLineBadge: {
-    backgroundColor: C.primary,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  favBusLineBadgeText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  favBusDest: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.textPrimary,
-  },
-  favBusMinsBadge: {
-    backgroundColor: Theme.colors.prayerBg,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  favBusMinsText: {
-    color: '#b45309',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  favStopEmpty: {
-    fontSize: 12,
-    color: C.textMuted,
-    fontStyle: 'italic',
-    paddingVertical: 6,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingRight: Theme.spacing.lg,
-  },
-  favRouteLiveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: Theme.colors.successBg,
-    borderWidth: 1,
-    borderColor: '#a7f3d0',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  favRouteLiveText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#047857',
-  },
-  studentPromoCard: {
-    marginHorizontal: Theme.spacing.lg,
-    backgroundColor: C.surface,
-    borderRadius: Theme.radius.lg,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    ...Theme.shadows.sm,
-  },
-  studentPromoLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  studentPromoTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: C.uniRed,
-  },
-  studentPromoSub: {
-    fontSize: 11,
-    color: C.textMuted,
-    marginTop: 2,
-  },
-  studentCard: {
-    marginHorizontal: Theme.spacing.lg,
-    backgroundColor: C.surface,
-    borderRadius: Theme.radius.lg,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    ...Theme.shadows.sm,
-  },
-  studentCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  studentCardTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: C.uniRed,
-  },
-  studentBadge: {
-    backgroundColor: C.uniRedSoft,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  studentBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: C.uniRed,
-    letterSpacing: 0.5,
-  },
-  studentLessonContent: {
-    gap: 4,
-  },
-  studentLessonNext: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: C.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  studentLessonName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: C.textPrimary,
-  },
-  studentLessonMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
-    flexWrap: 'wrap',
-  },
-  studentMetaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: C.surfaceSubtle,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  studentMetaText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: C.textSecondary,
-  },
-  studentTotalCount: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: C.textMuted,
-    marginLeft: 'auto',
-  },
-  studentEmptyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-  },
-  studentEmptyText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: C.textSecondary,
-  },
-}));
+const styles = themedStyles(() =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: C.background },
+    content: { paddingBottom: 12, gap: 10, flexGrow: 1 },
+
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Theme.spacing.lg,
+      paddingTop: 8,
+      gap: 10,
+    },
+    greet: { ...Theme.text.h1, color: C.textPrimary },
+    weatherRow: { marginTop: 2 },
+    weatherText: { fontSize: 13, color: C.textMuted, fontWeight: '600' },
+    iconBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 14,
+      backgroundColor: C.surface,
+      borderWidth: 1,
+      borderColor: C.cardBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 14,
+      backgroundColor: C.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+
+    // Benim durağım kartı
+    favStopCard: {
+      marginHorizontal: Theme.spacing.lg,
+      gap: 10,
+    },
+    favStopHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    favStopTitle: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: C.textPrimary,
+      flexShrink: 1,
+    },
+    favStopLink: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: C.primary,
+    },
+    favLoadingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 8,
+    },
+    favLoadingText: { fontSize: 12, color: C.textMuted },
+    favBusItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: C.surfaceSubtle,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      gap: 8,
+    },
+    favBusBadge: {
+      backgroundColor: C.primary,
+      paddingHorizontal: 6,
+      paddingVertical: 3,
+      borderRadius: 6,
+    },
+    favBusBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+    favBusName: { flex: 1, fontSize: 12, fontWeight: '600', color: C.textPrimary },
+    favEmptyText: { fontSize: 12, color: C.textMuted, paddingVertical: 4 },
+    setFavStopBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 6,
+    },
+    setFavStopText: { fontSize: 12, color: C.textMuted, flex: 1, lineHeight: 17 },
+
+    // Yan yana küçük kartlar (ElazığKart & Namaz)
+    sideBySideRow: {
+      flexDirection: 'row',
+      paddingHorizontal: Theme.spacing.lg,
+      gap: 12,
+    },
+    smallCard: {
+      backgroundColor: C.surface,
+      borderRadius: Theme.radius.lg,
+      borderWidth: 1,
+      borderColor: C.cardBorder,
+      padding: 14,
+      gap: 4,
+      ...Theme.shadows.sm,
+    },
+    smallCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    smallCardLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: C.textMuted,
+    },
+    cardBalanceText: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: C.primary,
+      fontVariant: ['tabular-nums'],
+    },
+    prayerTimeText: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: Theme.colors.accentDark,
+      fontVariant: ['tabular-nums'],
+    },
+    smallCardFooter: {
+      fontSize: 11,
+      color: C.textMuted,
+    },
+
+    // Bugün Bölümü
+    todaySection: {
+      paddingHorizontal: Theme.spacing.lg,
+      gap: 8,
+    },
+    sectionHeaderTitle: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: C.textPrimary,
+    },
+    todayCard: {
+      gap: 10,
+    },
+    todayRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 4,
+    },
+    todayIconCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    todayRowTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: C.textPrimary,
+    },
+    todayRowSub: {
+      fontSize: 11,
+      color: C.textMuted,
+      marginTop: 2,
+    },
+    todayEmptyText: {
+      fontSize: 12,
+      color: C.textMuted,
+      paddingVertical: 6,
+    },
+
+    // Hızlı Erişim Bölümü
+    quickActionsSection: {
+      gap: 6,
+    },
+
+    // Fırat OBS kartı
+    obsPromo: {
+      marginHorizontal: Theme.spacing.lg,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      backgroundColor: C.surface,
+      borderRadius: Theme.radius.lg,
+      borderWidth: 1,
+      borderColor: C.cardBorder,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      ...Theme.shadows.sm,
+    },
+    obsCard: {
+      marginHorizontal: Theme.spacing.lg,
+      backgroundColor: C.surface,
+      borderRadius: Theme.radius.lg,
+      borderWidth: 1,
+      borderColor: C.cardBorder,
+      borderLeftWidth: 3,
+      borderLeftColor: C.uniRed,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      gap: 8,
+      ...Theme.shadows.sm,
+    },
+    obsCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    obsCardTitle: {
+      fontSize: 13,
+      fontWeight: '800',
+      color: C.textPrimary,
+      flex: 1,
+    },
+    obsStatsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    obsStat: { flex: 1, alignItems: 'center', gap: 1 },
+    obsStatValue: {
+      fontSize: 17,
+      fontWeight: '800',
+      color: C.textPrimary,
+      fontVariant: ['tabular-nums'],
+    },
+    obsStatLabel: { fontSize: 10, fontWeight: '700', color: C.textMuted, letterSpacing: 0.4 },
+    obsStatDivider: { width: 1, height: 24, backgroundColor: C.divider },
+    obsLessonRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    obsLessonText: { flex: 1, fontSize: 12, color: C.textSecondary },
+
+    quickActionsScroll: {
+      paddingHorizontal: Theme.spacing.lg,
+      gap: 10,
+    },
+    quickActionItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: C.surface,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: C.cardBorder,
+      paddingVertical: 7,
+      paddingLeft: 7,
+      paddingRight: 14,
+      ...Theme.shadows.sm,
+    },
+    quickActionIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    quickActionLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: C.textPrimary,
+    },
+
+    // Yakınımdan Geçenler
+    nearSection: {
+      paddingHorizontal: Theme.spacing.lg,
+      gap: 8,
+    },
+    nearStopHeader: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: C.primary,
+      marginBottom: 2,
+    },
+    nearDepRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 3,
+    },
+    nearDepBadge: {
+      backgroundColor: C.primary,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+    },
+    nearDepBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+    nearDepDest: { flex: 1, fontSize: 12, color: C.textSecondary },
+
+    // Son Haberler
+    newsSection: {
+      paddingHorizontal: Theme.spacing.lg,
+      gap: 8,
+    },
+    newsSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    sectionActionText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: C.primary,
+    },
+    newsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      gap: 10,
+    },
+    newsRowTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: C.textPrimary,
+      lineHeight: 18,
+    },
+    newsRowDate: {
+      fontSize: 11,
+      color: C.textMuted,
+    },
+  })
+);

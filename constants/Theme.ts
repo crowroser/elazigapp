@@ -8,8 +8,8 @@
  * Modül düzeyindeki `StyleSheet.create` sonuçları ise `themedStyles(() => …)` ile sarılır:
  * stil nesnesi ilk erişimde kurulur, tema değişince bir sonraki erişimde yeniden kurulur.
  */
-import { useSyncExternalStore } from 'react';
-import { Appearance, StyleSheet } from 'react-native';
+import { useSyncExternalStore, useState, useEffect } from 'react';
+import { Appearance, StyleSheet, AccessibilityInfo } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const palette = {
@@ -98,6 +98,13 @@ const lightColors = {
   prayerGold: palette.gold600,
   prayerBg: palette.gold100,
 
+  // Canlı (v2)
+  live: '#10B981',
+  liveBg: '#ECFDF5',
+  mapStop: palette.slate500,
+  mapStopSelected: palette.navy800,
+  sheetSurface: 'rgba(255, 255, 255, 0.96)',
+
   // Üniversite (Fırat)
   uniRed: palette.red700,
   uniRedDark: '#7A1524',
@@ -154,6 +161,13 @@ const darkColors: ThemeColors = {
   transitBlue: '#66AFFE',
   prayerGold: '#FBBF24',
   prayerBg: '#3B3013',
+
+  // Canlı (v2)
+  live: '#10B981',
+  liveBg: '#064E3B',
+  mapStop: palette.slate400,
+  mapStopSelected: '#2F62A8',
+  sheetSurface: 'rgba(18, 27, 46, 0.96)',
 
   uniRed: '#C9455A',
   uniRedDark: '#9B1B2E',
@@ -234,6 +248,25 @@ export const Theme = {
       elevation: 8,
     },
   },
+  routePalette: [
+    '#2563EB', // Mavi
+    '#D97706', // Kehribar
+    '#059669', // Zümrüt
+    '#DC2626', // Kırmızı
+    '#7C3AED', // Mor
+    '#DB2777', // Pembe
+    '#0284C7', // Açık mavi
+    '#EA580C', // Turuncu
+    '#16A34A', // Yeşil
+    '#9333EA', // Menekşe
+    '#0891B2', // Camgöbeği
+    '#4F46E5', // İndigo
+  ],
+  motion: {
+    micro: 120,
+    panel: 260,
+    camera: 550,
+  },
 };
 
 /** Tema tercihi (sistem / açık / koyu). Değişiklik anında uygulanır ve kalıcı olarak saklanır. */
@@ -304,4 +337,29 @@ export function themedStyles<T extends StyleSheet.NamedStyles<T>>(factory: () =>
     ownKeys: () => Reflect.ownKeys(ensure() as any),
     getOwnPropertyDescriptor: (_t, key) => Object.getOwnPropertyDescriptor(ensure(), key),
   });
+}
+
+/**
+ * Sistem "Animasyonları Azalt" (prefers-reduced-motion) ayarını dinler (DESIGN_PLAN §2.4)
+ */
+export function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (isMounted) setReduced(enabled);
+    });
+
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+      if (isMounted) setReduced(enabled);
+    });
+
+    return () => {
+      isMounted = false;
+      sub?.remove?.();
+    };
+  }, []);
+
+  return reduced;
 }

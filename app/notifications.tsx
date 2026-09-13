@@ -179,7 +179,7 @@ export default function NotificationsScreen() {
   const lowBalance = card?.success && (card.bakiye ?? 0) < prefs.balanceThreshold;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScreenHeader
         title="Bildirimler & Uyarılar"
         subtitle="Yerel zamanlayıcılar ve bildirim tercihleri"
@@ -479,7 +479,7 @@ export default function NotificationsScreen() {
 
 const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
-  content: { padding: Theme.spacing.lg, gap: Theme.spacing.md },
+  content: { padding: Theme.spacing.lg, paddingBottom: 32, gap: Theme.spacing.md },
   section: { paddingHorizontal: 0, marginTop: 8, marginBottom: 0 },
   summaryCard: { gap: 10, backgroundColor: C.surfaceSubtle },
   summaryTitle: { ...Theme.text.body, color: C.textPrimary, fontWeight: '700' },

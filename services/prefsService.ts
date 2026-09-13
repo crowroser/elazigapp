@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ObsGraduationAnalysis } from './obsService';
 
 /**
  * Cihaz-yerel tercihler. Firestore erişilemese bile (kural/ağ hatası) kart numarası gibi
@@ -14,11 +15,13 @@ const KEYS = {
   favoriteRoutes: '@prefs/favorite_routes',
   gradeSnapshot: '@prefs/grade_snapshot',
   unseenGrades: '@prefs/unseen_grades',
+  graduationSnapshot: '@prefs/graduation_snapshot',
   lastNotifSync: '@prefs/last_notif_sync',
   trackedEvents: '@prefs/tracked_events',
   homeLayout: '@prefs/home_layout',
   hiddenCards: '@prefs/hidden_cards',
   favoritesTouched: '@prefs/favorites_touched',
+  cityCategory: '@prefs/city_category',
 } as const;
 
 async function getJson<T>(key: string, fallback: T): Promise<T> {
@@ -117,6 +120,11 @@ export const PrefsService = {
     await this.setUnseenGrades(list.filter((c) => c.courseCode !== courseCode));
   },
 
+  // ── O3: Mezuniyet Değişikliği ─────────────────────────────────────────────
+
+  getGraduationSnapshot: () => getJson<ObsGraduationAnalysis | null>(KEYS.graduationSnapshot, null),
+  setGraduationSnapshot: (snap: ObsGraduationAnalysis | null) => setJson(KEYS.graduationSnapshot, snap),
+
   // ── Bildirim senkron zamanı ──────────────────────────────────────────────
 
   getLastNotifSync: () => getJson<number>(KEYS.lastNotifSync, 0),
@@ -160,6 +168,9 @@ export const PrefsService = {
     await this.setHiddenCards(updated);
     return updated;
   },
+
+  getCityCategory: () => getJson<string>(KEYS.cityCategory, 'events'),
+  setCityCategory: (cat: string) => setJson(KEYS.cityCategory, cat),
 };
 
 // ── F12 Types ───────────────────────────────────────────────────────────────

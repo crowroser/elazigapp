@@ -269,7 +269,7 @@ const styles = themedStyles(() => StyleSheet.create({
   heroKicker: { color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   heroTitle: { color: '#fff', ...Theme.text.display },
   heroBadge: { width: 46, height: 46, borderRadius: 16, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  content: { paddingBottom: 16 },
+  content: { paddingBottom: 28 },
   pad: { marginHorizontal: Theme.spacing.lg },
   obsCard: { margin: Theme.spacing.lg, marginBottom: 8, backgroundColor: C.surface, borderRadius: Theme.radius.lg, borderWidth: 1, borderColor: C.uniBorder, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, ...Theme.shadows.md },
   obsIcon: { width: 50, height: 50, borderRadius: 16, backgroundColor: RED, alignItems: 'center', justifyContent: 'center' },

@@ -9,46 +9,50 @@ import {
   ActivityIndicator,
   StatusBar,
   Linking,
-  Platform,
   Dimensions,
-  Animated,
-  PanResponder,
+  AppState,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { Theme, themedStyles, useAppTheme } from '../../constants/Theme';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
+import * as Location from 'expo-location';
+import { NotificationService } from '../../services/notificationService';
+
+import { Theme, themedStyles, useAppTheme, useReducedMotion } from '../../constants/Theme';
 import {
   ApiService,
   BusStation,
   BusRoute,
-  CardBalanceResult,
   StationBusInfo,
   RealtimeBusInfo,
   RouteLineItem,
   RouteScheduleItem,
+  OverviewRouteGeometry,
 } from '../../services/apiService';
-import { CardQueryModal } from '../../components/CardQueryModal';
-import { AuthProfileModal } from '../../components/AuthProfileModal';
-import { AuthService, UserProfile } from '../../services/authService';
 import { PrefsService, FavoriteStop } from '../../services/prefsService';
 import { DelayStatsService, RouteDelayStats } from '../../services/delayStatsService';
-import { auth } from '../../config/firebase';
-import * as Location from 'expo-location';
-import { WebView } from 'react-native-webview';
-import { buildLeafletHtml } from '../../components/LeafletMap';
-import { formatLastUpdated } from '../../services/cacheService';
+import LeafletMap, { LeafletMapRef, LeafletMarkerItem } from '../../components/LeafletMap';
+import {
+  BottomSheet,
+  RouteChip,
+  VehicleCard,
+  LiveBadge,
+  Countdown,
+  Card,
+  PrimaryButton,
+  Pill,
+  Notice,
+  EmptyState,
+  SectionTitle,
+} from '../../components/ui';
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
-const ELAZIG_CENTER = { lat: 38.6745, lng: 39.2205 };
-const MAP_BOUNDS = {
-  minLat: 38.62,
-  maxLat: 38.73,
-  minLng: 39.15,
-  maxLng: 39.29,
-};
-
-const BUS_COLORS = ['#1A365D', '#3182CE', '#2D3748', '#0061a5', '#0f766e', '#7c3aed', '#b45309'];
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const ELAZIG_CENTER = { lat: 38.6748, lng: 39.2225 };
+/** Alt panel yarım açıkken (ekranın %46'sı) hedefin görünür alanın ortasına gelmesi için harita kaydırma oranı */
+const SHEET_HALF_SHIFT = 0.23;
+const MAP_BOUNDS = { minLat: 38.62, maxLat: 38.73, minLng: 39.15, maxLng: 39.29 };
 
 function normalizeText(text: string): string {
   return (text || '')
@@ -74,36 +78,57 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-function projectToScreen(lat: number, lng: number): { left: `${number}%`; top: `${number}%` } {
-  const x = Math.max(4, Math.min(92, ((lng - MAP_BOUNDS.minLng) / (MAP_BOUNDS.maxLng - MAP_BOUNDS.minLng)) * 100));
-  const y = Math.max(6, Math.min(88, ((MAP_BOUNDS.maxLat - lat) / (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat)) * 100));
-  return {
-    left: `${x}%` as `${number}%`,
-    top: `${y}%` as `${number}%`,
-  };
-}
-
-function getBusColor(hatkodu?: string, index = 0): string {
-  if (!hatkodu) return BUS_COLORS[index % BUS_COLORS.length];
-  let hash = 0;
-  for (let i = 0; i < hatkodu.length; i++) hash = (hash + hatkodu.charCodeAt(i) * (i + 1)) % 997;
-  return BUS_COLORS[hash % BUS_COLORS.length];
-}
-
 function formatDistance(km: number | null | undefined): string {
   if (km == null || Number.isNaN(km)) return '';
-  if (km < 1) return `${Math.round(km * 1000)} m mesafede`;
-  return `${km.toFixed(1)} km mesafede`;
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
+
+/** Plaka karşılaştırması için boşluk/harf farklarını yok say ("23 EB 968" ≈ "23EB968") */
+function normalizePlate(p?: string | null): string {
+  return String(p || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function parseGpsDateMs(dateStr?: string): number | null {
+  if (!dateStr) return null;
+  const direct = Date.parse(dateStr);
+  if (!isNaN(direct)) return direct;
+  const m = String(dateStr).match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (m) {
+    const d = new Date(
+      parseInt(m[3], 10),
+      parseInt(m[2], 10) - 1,
+      parseInt(m[1], 10),
+      parseInt(m[4] || '0', 10),
+      parseInt(m[5] || '0', 10),
+      parseInt(m[6] || '0', 10)
+    );
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  return null;
+}
+
+function formatGpsAge(dateStr?: string, referenceMs = Date.now()): string {
+  if (!dateStr) return 'Canlı GPS';
+  const ms = parseGpsDateMs(dateStr);
+  if (!ms) return 'Az önce';
+  const diffSec = Math.max(0, Math.floor((referenceMs - ms) / 1000));
+  if (diffSec < 4) return 'Az önce';
+  if (diffSec < 60) return `${diffSec} sn önce`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} dk önce`;
+  const diffHours = Math.floor(diffMin / 60);
+  return `${diffHours} sa önce`;
 }
 
 const WEEKDAYS = [
-  { id: 1, label: 'Pzt', full: 'Pazartesi' },
-  { id: 2, label: 'Sal', full: 'Salı' },
-  { id: 3, label: 'Çar', full: 'Çarşamba' },
-  { id: 4, label: 'Per', full: 'Perşembe' },
-  { id: 5, label: 'Cum', full: 'Cuma' },
-  { id: 6, label: 'Cmt', full: 'Cumartesi' },
-  { id: 7, label: 'Paz', full: 'Pazar' },
+  { id: 1, label: 'Pzt' },
+  { id: 2, label: 'Sal' },
+  { id: 3, label: 'Çar' },
+  { id: 4, label: 'Per' },
+  { id: 5, label: 'Cum' },
+  { id: 6, label: 'Cmt' },
+  { id: 7, label: 'Paz' },
 ];
 
 function getTodayWeekday(): number {
@@ -121,36 +146,85 @@ function parseTimeToMinutes(timeStr?: string): number | null {
   return h * 60 + m;
 }
 
+export type TransitContextMode = 'stop' | 'route' | 'vehicle' | 'city' | 'search';
+
 export default function TransitScreen() {
   useAppTheme();
+  const reducedMotion = useReducedMotion();
+  const router = useRouter();
+  const { stopId, stationId } = useLocalSearchParams<{ stopId?: string; stationId?: string }>();
+  const targetStopId = stopId || stationId;
+  const isFocused = useIsFocused();
+  const mapRef = useRef<LeafletMapRef>(null);
+
+  // G2: Canlı GPS yaşı sayacı (her saniye VehicleCard'da 'X sn önce' güncellenir)
+  const [gpsTicker, setGpsTicker] = useState(() => Date.now());
+
+  // AppState (G1.7 yoklama kadansı: arka plandayken durdur)
+  const [isAppActive, setIsAppActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      setIsAppActive(state === 'active');
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Temel Veriler
   const [stations, setStations] = useState<BusStation[]>([]);
-  const [nearbyStations, setNearbyStations] = useState<BusStation[]>([]);
   const [allRoutes, setAllRoutes] = useState<RouteLineItem[]>([]);
-  const [routes, setRoutes] = useState<BusRoute[]>([]);
-  const [liveBuses, setLiveBuses] = useState<RealtimeBusInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [transitStale, setTransitStale] = useState(false);
-  const [transitAt, setTransitAt] = useState(0);
+  const [overviewLines, setOverviewLines] = useState<OverviewRouteGeometry[]>([]);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Panel & Bağlam Durumu
+  const [mode, setMode] = useState<TransitContextMode>('stop');
+  const [snapPoint, setSnapPoint] = useState<'collapsed' | 'half' | 'full'>('half');
+
+  // Canlı Araçlar
+  const [allLiveVehicles, setAllLiveVehicles] = useState<RealtimeBusInfo[]>([]);
+  const [liveVehiclesGeneratedUtc, setLiveVehiclesGeneratedUtc] = useState('');
+  const [liveStatus, setLiveStatus] = useState<'live' | 'stale' | 'off'>('live');
+
+  // Durak Bağlamı
   const [selectedStation, setSelectedStation] = useState<BusStation | null>(null);
   const [stationBuses, setStationBuses] = useState<StationBusInfo[]>([]);
   const [stationLoading, setStationLoading] = useState(false);
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [mapCenter, setMapCenter] = useState(ELAZIG_CENTER);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchFilter, setSearchFilter] = useState<'all' | 'stations' | 'routes'>('all');
-  const [showRoutesPanel, setShowRoutesPanel] = useState(false);
+  const [busCountdowns, setBusCountdowns] = useState<Record<string, number>>({});
+
+  // Hat Bağlamı
   const [selectedRoute, setSelectedRoute] = useState<BusRoute | null>(null);
   const [scheduleDay, setScheduleDay] = useState<number>(getTodayWeekday());
   const [scheduleDirection, setScheduleDirection] = useState<'G' | 'D'>('G');
-  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [currentSchedules, setCurrentSchedules] = useState<RouteScheduleItem[]>([]);
-  const [favoriteStop, setFavoriteStop] = useState<FavoriteStop | null>(null);
-  const [favoriteRoutes, setFavoriteRoutes] = useState<string[]>([]);
-  const [sheetExpanded, setSheetExpanded] = useState(false);
-  const router = useRouter();
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [delayStats, setDelayStats] = useState<RouteDelayStats | null>(null);
+  const scheduleReqRef = useRef(0);
 
+  // Araç Bağlamı (G2)
+  const [selectedVehicle, setSelectedVehicle] = useState<any | null>(null);
+  const [followedPlate, setFollowedPlate] = useState<string | null>(null);
+
+  // Favoriler
+  const [favoriteStop, setFavoriteStop] = useState<FavoriteStop | null>(null);
+  const didAutoSelectRef = useRef(false);
+  const [locationAttempted, setLocationAttempted] = useState(false);
+  const [favoriteRoutes, setFavoriteRoutes] = useState<string[]>([]);
+
+  // Arama Bağlamı
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilter, setSearchFilter] = useState<'all' | 'routes' | 'stations'>('all');
+
+  // G7: Yakınımdan Geçenler
+  const [nearDepartures, setNearDepartures] = useState<{ stop: BusStation; departures: StationBusInfo[] }[]>([]);
+
+  // G8: Bildirim takibi (2 durak kala haber ver)
+  // Duraktan seçilen araç: hangi duraktan seçildi (araç kartında "durağa kalan" için)
+  const [vehicleFromStop, setVehicleFromStop] = useState<BusStation | null>(null);
+  const [alertTarget, setAlertTarget] = useState<{ stopId: string; routeCode: string; plate?: string; fired?: boolean } | null>(null);
+  // Yoklama sırasında güncel hedefi okumak için ref (loadStationArrivals yeniden kurulmaz, sayaç sıfırlanmaz)
+  const alertTargetRef = useRef(alertTarget);
+  alertTargetRef.current = alertTarget;
+
+  // 1. Favorileri yükle
   useEffect(() => {
     (async () => {
       const [favStop, favRoutes] = await Promise.all([
@@ -162,248 +236,466 @@ export default function TransitScreen() {
     })();
   }, []);
 
-  const toggleFavoriteStop = useCallback(
-    async (station: BusStation) => {
-      const isFav = favoriteStop?.id === station.id;
-      const nextFav: FavoriteStop | null = isFav ? null : { id: station.id, name: station.name };
-      setFavoriteStop(nextFav);
-      await PrefsService.setFavoriteStop(nextFav);
-      const uid = auth.currentUser?.uid;
-      if (uid) {
-        AuthService.updateUserProfile(uid, { favoriteStop: nextFav }).catch(() => {});
-      }
-    },
-    [favoriteStop]
-  );
-
-  const toggleFavoriteRoute = useCallback(
-    async (routeCode: string) => {
-      const updated = await PrefsService.toggleFavoriteRoute(routeCode);
-      setFavoriteRoutes(updated);
-      const uid = auth.currentUser?.uid;
-      if (uid) {
-        AuthService.updateUserProfile(uid, { favoriteRoutes: updated }).catch(() => {});
-      }
-    },
-    []
-  );
-  const [cardModalVisible, setCardModalVisible] = useState(false);
-  const [profileModalVisible, setProfileModalVisible] = useState(false);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [cardInfo, setCardInfo] = useState<CardBalanceResult>({ success: false });
-  const [refreshingBuses, setRefreshingBuses] = useState(false);
-  // Şehir geneli canlı mod: haritada boş yere dokununca tüm otobüsler
-  const [cityLive, setCityLive] = useState(false);
-  const cityLiveRef = useRef(false);
-  // Hızlı gün/yön geçişlerinde eski yanıtın yenisini ezmemesi için istek sıra numarası
-  const scheduleReqRef = useRef(0);
-  const statsReqRef = useRef(0); // hızlı hat değişiminde eski hattın istatistiği yeni hatta görünmesin
-
-  const enterCityLive = useCallback(async () => {
-    cityLiveRef.current = true;
-    setCityLive(true);
-    setSheetExpanded(false);
-    setShowRoutesPanel(false);
-    setShowSearch(false);
-    setSelectedRoute(null);
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(`if (window.updateRoutePolyline) { window.updateRoutePolyline([]); } true;`);
-    }
-    const all = await ApiService.getAllLiveVehicles();
-    if (cityLiveRef.current) setLiveBuses(all);
-  }, []);
-
-  const exitCityLive = useCallback(() => {
-    cityLiveRef.current = false;
-    setCityLive(false);
-  }, []);
-
-  // Canlı modda 5 sn'de bir tüm araçları yenile
+  // 2. Durakları, hatları ve overview çizgilerini tek istekte yükle
   useEffect(() => {
-    if (!cityLive) return;
-    const t = setInterval(async () => {
-      const all = await ApiService.getAllLiveVehicles();
-      if (cityLiveRef.current) setLiveBuses(all);
-    }, 5000);
-    return () => clearInterval(t);
-  }, [cityLive]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const [stRes, rtsRes, ovLines] = await Promise.all([
+          ApiService.getBusStationsWithCache().catch(() => ({ data: [] as BusStation[], stale: true, at: 0 })),
+          ApiService.getAllRoutesWithCache().catch(() => ({ data: [] as RouteLineItem[], stale: true, at: 0 })),
+          ApiService.getOverviewLines().catch(() => []),
+        ]);
 
-  const sheetAnim = useRef(new Animated.Value(1)).current;
-  const iframeRef = useRef<any>(null);
-  const webViewRef = useRef<WebView>(null);
-  const isMapReadyRef = useRef(false);
-  const userLocationRef = useRef<{ lat: number; lng: number } | null>(null);
-  const didAutoSelectRef = useRef(false);
-  const didLocateSelectRef = useRef(false);
+        if (cancelled) return;
+        setStations(stRes.data);
+        setAllRoutes(rtsRes.data);
+        setOverviewLines(ovLines);
 
-  const recordStopSearch = (stopName: string) => {
-    AuthService.addRecentBusStop(auth.currentUser?.uid || null, stopName);
-  };
+        // LeafletMap'e tüm hat çizgilerini besle (şehir geneli çizgiler)
+        if (ovLines.length > 0) {
+          mapRef.current?.setOverviewLines(ovLines);
+        }
 
-  const recordRouteSearch = (routeName: string) => {
-    AuthService.addRecentBusRoute(auth.currentUser?.uid || null, routeName);
-  };
-
-  const syncUserLocationToMap = useCallback((coords: { lat: number; lng: number }, pan = true) => {
-    if (webViewRef.current && isMapReadyRef.current) {
-      webViewRef.current.injectJavaScript(
-        `if (window.updateUserLocation) { window.updateUserLocation(${JSON.stringify(coords)}); }
-         ${pan ? `if (window.panToLocation) { window.panToLocation(${coords.lat}, ${coords.lng}, 15); }` : ''}
-         true;`
-      );
-    }
+        // İlk açılışta favori durak varsa onu seç; yoksa konum geldiğinde en yakın durak seçilir
+        // (konum reddedilirse aşağıdaki yedek seçim şehir merkezine en yakın durağı alır)
+        const fav = await PrefsService.getFavoriteStop().catch(() => null);
+        const favStation = fav ? stRes.data.find((s) => String(s.id) === String(fav.id)) : null;
+        if (favStation && favStation.lat && favStation.lng) {
+          didAutoSelectRef.current = true;
+          setSelectedStation(favStation);
+          mapRef.current?.panToLocation(favStation.lat, favStation.lng, 16);
+          loadStationArrivals(favStation.id);
+        }
+      } catch (e) {
+        console.log('Ulaşım ilk veri yükleme hatası:', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadLiveBuses = useCallback(async (targetRouteCode?: string) => {
-    if (cityLiveRef.current) return;
-    setRefreshingBuses(true);
-    try {
-      let code = targetRouteCode || selectedRoute?.routeCode || (stationBuses.length > 0 ? stationBuses[0].busLineCode : '') || (allRoutes.length > 0 ? allRoutes[0].kod : '');
-      if (code) {
-        const buses = await ApiService.getRealtimeBusData(code);
-        const filtered = buses.filter((b) => b.enlem && b.boylam);
-        setLiveBuses(filtered);
+  // 3. Kullanıcı konumu al
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+          setUserLocation(coords);
+          mapRef.current?.updateUserLocation(coords);
+
+          // G7: 500m içindeki yakından geçenleri al
+          ApiService.getNearDepartures(coords.lat, coords.lng)
+            .then((res) => setNearDepartures(res))
+            .catch(() => {});
+        }
+      } catch (e) {
+        console.log('Konum izni alınamadı:', e);
+      } finally {
+        setLocationAttempted(true);
       }
-    } catch (e) {
-      console.log('Canlı otobüs yükleme hatası:', e);
-    }
-    setRefreshingBuses(false);
-  }, [selectedRoute, stationBuses, allRoutes]);
+    })();
+  }, []);
 
-  const loadStationDetail = useCallback(async (station: BusStation, isBackgroundUpdate = false, panMap = true) => {
-    if (isBackgroundUpdate && cityLiveRef.current) return;
-    if (!isBackgroundUpdate) exitCityLive();
-    setSelectedStation(station);
-    if (panMap) {
-      setSheetExpanded(true);
-    }
-    setShowRoutesPanel(false);
-    if (!isBackgroundUpdate) {
-      setStationLoading(true);
-    }
-    recordStopSearch(station.name);
 
-    if (!isBackgroundUpdate && panMap && station.lat && station.lng) {
-      setMapCenter({ lat: station.lat, lng: station.lng });
-      if (webViewRef.current && isMapReadyRef.current) {
-        webViewRef.current.injectJavaScript(
-          `if (window.panToLocation) { window.panToLocation(${station.lat}, ${station.lng}, 16); } true;`
-        );
+  // G2: Araç modundayken her saniye GPS yaşını güncelle
+  useEffect(() => {
+    if (mode !== 'vehicle' || !selectedVehicle) return;
+    const interval = setInterval(() => {
+      setGpsTicker(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [mode, selectedVehicle]);
+
+  // 4. Canlı araçlar yoklama döngüsü (G1.7)
+  // Şehir geneli: 2 sn (overview/vehicles)
+  // Hat modu: 5 sn (vehicles/{variantId})
+  useEffect(() => {
+    if (!isAppActive || !isFocused) return;
+
+    let timer: any = null;
+    const poll = async () => {
+      try {
+        if (mode === 'route' && selectedRoute) {
+          const code = selectedRoute.routeCode || selectedRoute.lineNo;
+          const buses = await ApiService.getRealtimeBusData(code);
+          const now = Date.now();
+          const MAX_AGE_MS = 15 * 60 * 1000;
+          // G1.8 Bayat filtre: Hat modunda editDate > 15 dk olan araç gizlenir
+          const filtered = buses.filter((b) => {
+            if (!b.enlem || !b.boylam) return false;
+            if (b.editDate) {
+              const editMs = parseGpsDateMs(b.editDate);
+              if (editMs && now - editMs > MAX_AGE_MS) return false;
+            }
+            return true;
+          });
+          setAllLiveVehicles(filtered);
+          setLiveStatus(filtered.length > 0 ? 'live' : 'stale');
+          mapRef.current?.updateBuses(filtered);
+        } else {
+          const snapshot = await ApiService.getAllLiveVehiclesDetailed();
+          if (snapshot.vehicles.length > 0) {
+            setAllLiveVehicles(snapshot.vehicles);
+            setLiveVehiclesGeneratedUtc(snapshot.generatedUtc);
+            setLiveStatus('live');
+            mapRef.current?.updateBuses(snapshot.vehicles, snapshot.generatedUtc);
+          } else {
+            setLiveStatus('stale');
+          }
+        }
+      } catch {
+        setLiveStatus('off');
       }
-    }
+    };
 
+    poll();
+    const intervalMs = mode === 'route' ? 5000 : 2500;
+    timer = setInterval(poll, intervalMs);
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isAppActive, isFocused, mode, selectedRoute]);
+
+  // 5. Durak yaklaşan otobüsler yoklama döngüsü (8 sn)
+  const loadStationArrivals = useCallback(async (stopId: string) => {
+    setStationLoading(true);
     try {
-      const [buses, stationRoutes] = await Promise.all([
-        ApiService.getStationRemainingTime(station.id),
-        // Duraktan geçen hatlar (ilk açılışta; arka plan yenilemede tekrar çekmeye gerek yok)
-        isBackgroundUpdate || station.lines.length > 0
-          ? Promise.resolve<RouteLineItem[]>([])
-          : ApiService.getStationRoutes(station.id),
-      ]);
+      const buses = await ApiService.getStationRemainingTime(stopId);
       setStationBuses(buses);
 
-      if (stationRoutes.length > 0) {
-        const lines = stationRoutes.map((r) => `${r.hatNo} ${r.kod}`.trim());
-        setSelectedStation((prev) => (prev && prev.id === station.id ? { ...prev, lines } : prev));
-        setStations((prev) => prev.map((s) => (s.id === station.id ? { ...s, lines } : s)));
-        setNearbyStations((prev) => prev.map((s) => (s.id === station.id ? { ...s, lines } : s)));
-      }
+      // G5 Geri sayım saniyelerini başlat
+      const nextCountdowns: Record<string, number> = {};
+      buses.forEach((b) => {
+        const key = `${b.busLineCode}_${b.busPlate || b.busLineNo}`;
+        if (b.remainingTimeCurr != null) {
+          nextCountdowns[key] = b.remainingTimeCurr * 60;
+        }
+      });
+      setBusCountdowns(nextCountdowns);
 
-      if (buses.length > 0 && buses[0].busLineCode) {
-        const live = await ApiService.getRealtimeBusData(buses[0].busLineCode);
-        setLiveBuses(live.filter((b) => b.enlem && b.boylam));
-      }
-    } catch (e) {
-      console.log('Durak detay yükleme hatası:', e);
-    }
-    setStationLoading(false);
-  }, []);
-
-  const loadRouteDetail = useCallback(async (routeCodeOrHatNo: string, routeName?: string) => {
-    exitCityLive();
-    setRefreshingBuses(true);
-    setShowRoutesPanel(true);
-    setShowSearch(false);
-
-    // Hat kodunu çöz (kullanıcı hat no veya kod vermiş olabilir)
-    const qNorm = normalizeText(routeCodeOrHatNo);
-    const matched = allRoutes.find(
-      (r) => String(r.hatNo) === routeCodeOrHatNo || normalizeText(r.kod) === qNorm
-    );
-    const targetKod = matched ? matched.kod : routeCodeOrHatNo;
-    const displayName = routeName || (matched ? `Hat ${matched.hatNo} - ${matched.aciklama}` : `Hat ${routeCodeOrHatNo}`);
-    recordRouteSearch(displayName);
-
-    // 1. Canlı otobüsleri seçili hat bazlı belediye API'sinden çek
-    try {
-      const liveRouteBuses = await ApiService.getRealtimeBusData(targetKod);
-      const filtered = liveRouteBuses.filter((b) => b.enlem && b.boylam);
-      setLiveBuses(filtered);
-
-      if (filtered.length > 0 && filtered[0].enlem && filtered[0].boylam) {
-        setMapCenter({ lat: filtered[0].enlem, lng: filtered[0].boylam });
-        if (webViewRef.current) {
-          webViewRef.current.injectJavaScript(
-            `if (window.panToLocation) { window.panToLocation(${filtered[0].enlem}, ${filtered[0].boylam}); } true;`
+      // G8 Canlı bildirim kontrolü (2 durak kala bildirim ver) — hedef ref'ten okunur
+      const target = alertTargetRef.current;
+      if (target && !target.fired && target.stopId === stopId) {
+        // Plaka biliniyorsa aynı araç; bilinmiyorsa aynı hattın en yakın aracı
+        const sameRoute = buses.filter((b) => b.busLineCode === target.routeCode);
+        const matching =
+          (target.plate && sameRoute.find((b) => b.busPlate === target.plate)) ||
+          sameRoute.sort((a, b) => (a.remainingTimeCurr ?? 999) - (b.remainingTimeCurr ?? 999))[0];
+        const stopsLeft = matching?.remainingNumberOfBusStops;
+        const minsLeft = matching?.remainingTimeCurr;
+        const due =
+          !!matching &&
+          ((stopsLeft != null && stopsLeft <= 2) || (stopsLeft == null && minsLeft != null && minsLeft <= 3));
+        if (due) {
+          setAlertTarget((prev) => (prev ? { ...prev, fired: true } : null));
+          NotificationService.sendImmediate(
+            '🚌 Otobüsünüz yaklaşıyor',
+            `Hat ${matching.busLineNo || matching.busLineCode}${matching.busPlate ? ` (${matching.busPlate})` : ''} · ${
+              stopsLeft != null ? `${stopsLeft} durak kaldı` : `${minsLeft} dk kaldı`
+            }`,
+            '/transit',
+            'balance'
           );
         }
       }
     } catch (e) {
-      console.log('Hat canlı otobüs yükleme hatası:', e);
+      console.log('Durak yaklaşan otobüsler hatası:', e);
+    } finally {
+      setStationLoading(false);
     }
-    setRefreshingBuses(false);
+  }, []);
 
-    // 2. Hat detaylarını (duraklar, sefer saatleri, fiyat ve polyline koordinatları) çek
-    try {
-      let existingRoute = routes.find((r) => r.routeCode === targetKod || r.lineNo === targetKod);
-      if (!existingRoute || !existingRoute.mainStops || existingRoute.mainStops.length === 0) {
+  // 3b. Otomatik ilk seçim: konum + duraklar hazır olunca en yakın durak (bir kez).
+  //     Favori durak veya derin bağlantı zaten seçtiyse dokunma; konum yoksa merkeze en yakın durak.
+  useEffect(() => {
+    if (didAutoSelectRef.current || stations.length === 0 || !locationAttempted) return;
+    if (targetStopId) return; // derin bağlantı kendi seçimini yapar
+    const origin = userLocation || ELAZIG_CENTER;
+    let nearest: BusStation | null = null;
+    let minDist = Infinity;
+    for (const st of stations) {
+      if (!st.lat || !st.lng) continue;
+      const d = haversineDistance(origin.lat, origin.lng, st.lat, st.lng);
+      if (d < minDist) {
+        minDist = d;
+        nearest = st;
+      }
+    }
+    if (!nearest) return;
+    didAutoSelectRef.current = true;
+    setSelectedStation(nearest);
+    mapRef.current?.selectMarker(nearest.id);
+    mapRef.current?.panToLocation(nearest.lat!, nearest.lng!, 16);
+    loadStationArrivals(nearest.id);
+  }, [stations, userLocation, locationAttempted, targetStopId, loadStationArrivals]);
+
+  // Durak seçiliyken periyodik güncelle
+  useEffect(() => {
+    const keepPolling = mode === 'stop' || (mode === 'vehicle' && !!vehicleFromStop);
+    if (!isAppActive || !isFocused || !selectedStation || !keepPolling) return;
+    const interval = setInterval(() => {
+      loadStationArrivals(selectedStation.id);
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [isAppActive, isFocused, selectedStation, mode, vehicleFromStop, loadStationArrivals]);
+
+  // G5: Saniye bazlı geri sayım sayacı (her 1 saniyede -1)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setBusCountdowns((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const k in next) {
+          if (next[k] > 0) {
+            next[k] = next[k] - 1;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // G6: Hat bazlı aktif araç sayısı haritası
+  const activeBusCountsByRoute = useMemo(() => {
+    const map: Record<string, number> = {};
+    allLiveVehicles.forEach((v) => {
+      const code = v.hatkodu || (v as any).routeCode;
+      if (code) {
+        map[code] = (map[code] || 0) + 1;
+      }
+    });
+    return map;
+  }, [allLiveVehicles]);
+
+  // Sıralı hat çipleri: aktif aracı çok olanlar önde
+  const sortedRouteChips = useMemo(() => {
+    return [...allRoutes].sort((a, b) => {
+      const cntA = activeBusCountsByRoute[a.kod] || 0;
+      const cntB = activeBusCountsByRoute[b.kod] || 0;
+      if (cntB !== cntA) return cntB - cntA;
+      return Number(a.hatNo) - Number(b.hatNo);
+    });
+  }, [allRoutes, activeBusCountsByRoute]);
+
+  // Harita İşaretçileri (DESIGN_PLAN §2.1: slate500 dolgu, beyaz kenar)
+  const mapMarkers = useMemo<LeafletMarkerItem[]>(() => {
+    return stations
+      .filter((s) => s.lat && s.lng)
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        direction: s.direction,
+        lat: s.lat!,
+        lng: s.lng!,
+        type: 'station',
+      }));
+  }, [stations]);
+
+  // ── Etkileşimler ────────────────────────────────────────────────────────────
+
+  const handleSelectStation = useCallback(
+    (station: BusStation) => {
+      setSelectedStation((prev) => {
+        if (!prev || String(prev.id) !== String(station.id)) {
+          setStationBuses([]);
+          setBusCountdowns({});
+        }
+        return station;
+      });
+      setMode('stop');
+      setSnapPoint('half');
+      mapRef.current?.selectMarker(station.id);
+      if (station.lat && station.lng) {
+        mapRef.current?.panToLocation(station.lat, station.lng, 16, SHEET_HALF_SHIFT);
+      }
+      loadStationArrivals(station.id);
+    },
+    [loadStationArrivals]
+  );
+
+  // G9: Widget derin bağlantı veya dış parametre ile durak açılışı
+  useEffect(() => {
+    if (!targetStopId || stations.length === 0) return;
+    const found = stations.find(
+      (s) => String(s.id) === String(targetStopId) || String(s.code) === String(targetStopId)
+    );
+    if (found) {
+      handleSelectStation(found);
+    }
+  }, [targetStopId, stations, handleSelectStation]);
+
+  const handleSelectRoute = useCallback(
+    async (routeCodeOrHatNo: string, routeName?: string) => {
+      setMode('route');
+      setSnapPoint('half');
+      const qNorm = normalizeText(routeCodeOrHatNo);
+      const matched = allRoutes.find(
+        (r) => String(r.hatNo) === routeCodeOrHatNo || normalizeText(r.kod) === qNorm
+      );
+      const targetKod = matched ? matched.kod : routeCodeOrHatNo;
+      const displayName = routeName || (matched ? `Hat ${matched.hatNo} - ${matched.aciklama}` : `Hat ${routeCodeOrHatNo}`);
+
+      try {
         const fetched = await ApiService.getBusRoutes(targetKod);
         if (fetched && fetched.length > 0) {
-          existingRoute = fetched[0];
-          existingRoute.routeName = displayName;
-          setRoutes((prev) => [fetched[0], ...prev.filter((p) => p.routeCode !== targetKod && p.lineNo !== targetKod)]);
+          const r = fetched[0];
+          r.routeName = displayName;
+          setSelectedRoute(r);
+          setCurrentSchedules(r.schedules || []);
+          if (r.routeCoordinates && r.routeCoordinates.length > 0) {
+            mapRef.current?.updateRoutePolyline(r.routeCoordinates, targetKod);
+          }
         }
+      } catch (e) {
+        console.log('Hat seçimi hatası:', e);
       }
 
-      if (existingRoute) {
-        setSelectedRoute(existingRoute);
-        scheduleReqRef.current++; // önceki hattın bekleyen sefer isteğini geçersiz kıl
-        setScheduleDay(getTodayWeekday());
-        setScheduleDirection('G');
-        setScheduleLoading(false);
-        setCurrentSchedules(existingRoute.schedules || []);
+      // Gecikme ve yoğunluk istatistikleri
+      DelayStatsService.getRouteDelayStats(targetKod)
+        .then(setDelayStats)
+        .catch(() => setDelayStats(null));
+    },
+    [allRoutes]
+  );
 
-        // Harita üzerine polyline çiz
-        if (webViewRef.current && existingRoute.routeCoordinates && existingRoute.routeCoordinates.length > 0) {
-          const js = `if (window.updateRoutePolyline) { window.updateRoutePolyline(${JSON.stringify(existingRoute.routeCoordinates)}); } true;`;
-          webViewRef.current.injectJavaScript(js);
-        }
+  const handleSelectVehicle = useCallback((vehicle: any, fromStop: BusStation | null = null) => {
+    setSelectedVehicle(vehicle);
+    setVehicleFromStop(fromStop);
+    setMode('vehicle');
+    setSnapPoint('half');
+    const plate = vehicle.plaka || vehicle.plate || vehicle.key;
+    mapRef.current?.selectVehicle(plate);
+    const lat = Number(vehicle.enlem ?? vehicle.lat);
+    const lng = Number(vehicle.boylam ?? vehicle.lon);
+    if (lat && lng) mapRef.current?.panToLocation(lat, lng, 16, SHEET_HALF_SHIFT);
+  }, []);
 
-        const statsReq = ++statsReqRef.current;
-        setDelayStats(null);
-        DelayStatsService.getRouteDelayStats(targetKod)
-          .then((s) => statsReq === statsReqRef.current && setDelayStats(s))
-          .catch(() => statsReq === statsReqRef.current && setDelayStats(null));
-      } else {
-        setSelectedRoute({
-          lineNo: targetKod,
-          routeCode: targetKod,
-          routeName: displayName,
-          departureTimes: [],
-          mainStops: [],
+  /** Durak listesindeki yaklaşan otobüse dokununca: plakayla canlı aracı bul ve haritada göster */
+  const handleSelectApproachingBus = useCallback(
+    (bus: StationBusInfo) => {
+      if (!selectedStation) return;
+      const plate = normalizePlate(bus.busPlate);
+      let live = plate
+        ? allLiveVehicles.find((v) => normalizePlate(v.plaka || (v as any).plate) === plate)
+        : null;
+      // Plaka yoksa (API bazı satırlarda boş döner): aynı hattın durağa en yakın canlı aracı
+      if (!live) {
+        const routeItem = allRoutes.find(
+          (r) => String(r.hatNo) === String(bus.busLineNo) || normalizeText(r.kod) === normalizeText(bus.busLineCode)
+        );
+        const routeKod = routeItem?.kod;
+        const candidates = allLiveVehicles.filter((v) => {
+          const code = v.hatkodu || (v as any).routeCode || '';
+          return (routeKod && code === routeKod) || normalizeText(code) === normalizeText(bus.busLineCode);
         });
-        setCurrentSchedules([]);
-        const statsReq = ++statsReqRef.current;
-        setDelayStats(null);
-        DelayStatsService.getRouteDelayStats(targetKod)
-          .then((s) => statsReq === statsReqRef.current && setDelayStats(s))
-          .catch(() => statsReq === statsReqRef.current && setDelayStats(null));
+        if (candidates.length > 0 && selectedStation.lat && selectedStation.lng) {
+          let best: RealtimeBusInfo | null = null;
+          let bestD = Infinity;
+          for (const v of candidates) {
+            if (!v.enlem || !v.boylam) continue;
+            const d = haversineDistance(selectedStation.lat, selectedStation.lng, v.enlem, v.boylam);
+            if (d < bestD) {
+              bestD = d;
+              best = v;
+            }
+          }
+          live = best;
+        }
+      }
+      if (live) {
+        handleSelectVehicle(live, selectedStation);
+        return;
+      }
+      // Canlı konum listede yoksa hattı aç (o hattın tüm araçları görünür)
+      Alert.alert(
+        'Araç konumu bulunamadı',
+        plate
+          ? `${bus.busPlate} plakalı aracın canlı konumu şu an listede yok. Hattı açmak ister misiniz?`
+          : 'Bu sefer için plaka bilgisi yok. Hattı açmak ister misiniz?',
+        [
+          { text: 'Vazgeç', style: 'cancel' },
+          { text: 'Hattı Aç', onPress: () => handleSelectRoute(bus.busLineCode, bus.busLineLongName) },
+        ]
+      );
+    },
+    [selectedStation, allLiveVehicles, allRoutes, handleSelectVehicle, handleSelectRoute]
+  );
+
+  // Araç modunda seçili aracın verisi (hız, GPS zamanı, konum) her yoklamada tazelensin
+  useEffect(() => {
+    if (mode !== 'vehicle' || !selectedVehicle) return;
+    const plate = normalizePlate(selectedVehicle.plaka || selectedVehicle.plate || selectedVehicle.key);
+    if (!plate) return;
+    const fresh = allLiveVehicles.find((v) => normalizePlate(v.plaka || (v as any).plate) === plate);
+    if (fresh && fresh !== selectedVehicle) setSelectedVehicle(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allLiveVehicles]);
+
+  const handleToggleFollow = useCallback(() => {
+    if (!selectedVehicle) return;
+    const plate = selectedVehicle.plaka || selectedVehicle.plate || selectedVehicle.key;
+    if (followedPlate === plate) {
+      setFollowedPlate(null);
+      mapRef.current?.setFollowVehicle(null);
+    } else {
+      setFollowedPlate(plate);
+      mapRef.current?.setFollowVehicle(plate);
+    }
+  }, [selectedVehicle, followedPlate]);
+
+  const toggleCityWideMode = useCallback(() => {
+    if (mode === 'city') {
+      if (selectedStation) {
+        setMode('stop');
+      } else {
+        setMode('stop');
+      }
+    } else {
+      setMode('city');
+      setSelectedRoute(null);
+      mapRef.current?.updateRoutePolyline([]);
+      mapRef.current?.selectMarker(null);
+      mapRef.current?.selectVehicle(null);
+    }
+  }, [mode, selectedStation]);
+
+  const goToMyLocation = useCallback(async () => {
+    try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setUserLocation(coords);
+      mapRef.current?.updateUserLocation(coords);
+      mapRef.current?.panToLocation(coords.lat, coords.lng, 16);
+
+      // En yakın durağı bul ve seç
+      let nearest: BusStation | null = null;
+      let minDist = Infinity;
+      for (const st of stations) {
+        if (st.lat && st.lng) {
+          const d = haversineDistance(coords.lat, coords.lng, st.lat, st.lng);
+          if (d < minDist) {
+            minDist = d;
+            nearest = st;
+          }
+        }
+      }
+      if (nearest) {
+        handleSelectStation(nearest);
       }
     } catch (e) {
-      console.log('Hat rota bilgisi alma hatası:', e);
+      console.log('Konum alma hatası:', e);
     }
-  }, [allRoutes, routes]);
+  }, [stations, handleSelectStation]);
 
+  // Sefer saatleri gün/yön değişimi
   const changeScheduleDayOrDirection = useCallback(
     async (newDay: number, newDir: 'G' | 'D') => {
       setScheduleDay(newDay);
@@ -414,10 +706,9 @@ export default function TransitScreen() {
       setScheduleLoading(true);
       try {
         const list = await ApiService.getRouteSchedule(code, newDay, newDir);
-        if (reqId !== scheduleReqRef.current) return; // daha yeni bir istek var
-        setCurrentSchedules(list);
-      } catch (e) {
-        console.log('Sefer saatleri değiştirme hatası:', e);
+        if (reqId === scheduleReqRef.current) setCurrentSchedules(list);
+      } catch {
+        // ignore
       } finally {
         if (reqId === scheduleReqRef.current) setScheduleLoading(false);
       }
@@ -425,2322 +716,1273 @@ export default function TransitScreen() {
     [selectedRoute]
   );
 
-  const todayWeekday = getTodayWeekday();
-  const isSelectedToday = scheduleDay === todayWeekday;
+  // G4: "Binebileceğin en iyi durak" hesaplayıcı
+  const bestBoarding = useMemo(() => {
+    if (!userLocation || !selectedRoute?.mainStops || selectedRoute.mainStops.length === 0) return null;
+    const routeBuses = allLiveVehicles.filter(
+      (v) => (v.hatkodu || (v as any).routeCode) === selectedRoute.routeCode
+    );
+    if (routeBuses.length === 0) return null;
+    const bus = routeBuses[0];
+    if (!bus.enlem || !bus.boylam) return null;
 
-  const nextDepartureIndex = useMemo(() => {
-    if (!isSelectedToday || currentSchedules.length === 0) return -1;
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-
-    for (let i = 0; i < currentSchedules.length; i++) {
-      const s = currentSchedules[i];
-      const m =
-        s.hour !== undefined && s.minute !== undefined
-          ? s.hour * 60 + s.minute
-          : parseTimeToMinutes(s.time);
-      if (m !== null && m > nowMinutes) {
-        return i;
-      }
-    }
-    return -1;
-  }, [isSelectedToday, currentSchedules]);
-
-  // Selected station live tracking polling (seamless background updates every 8 seconds)
-  useEffect(() => {
-    if (!selectedStation) return;
-    const interval = setInterval(() => {
-      loadStationDetail(selectedStation, true);
-    }, 8000);
-    return () => clearInterval(interval);
-  }, [selectedStation, loadStationDetail]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
-          setUserLocation(coords);
-          userLocationRef.current = coords;
-          if (
-            coords.lat > MAP_BOUNDS.minLat &&
-            coords.lat < MAP_BOUNDS.maxLat &&
-            coords.lng > MAP_BOUNDS.minLng &&
-            coords.lng < MAP_BOUNDS.maxLng
-          ) {
-            setMapCenter(coords);
-          }
-          if (isMapReadyRef.current) {
-            syncUserLocationToMap(coords, true);
-          }
-
-          // F1: Sunucu hazır uç noktasıyla en yakın durakları anında al
-          try {
-            const nearby = await ApiService.getNearbyStations(coords.lat, coords.lng);
-            if (nearby.length > 0) {
-              setNearbyStations(nearby);
-              if (!didLocateSelectRef.current) {
-                didLocateSelectRef.current = true;
-                didAutoSelectRef.current = true;
-                await loadStationDetail(nearby[0], false, false);
-              }
-            }
-          } catch (err) {
-            console.log('Yakındaki durakları yükleme hatası:', err);
-          }
-        }
-      } catch (e) {
-        console.log('Konum izni alınamadı:', e);
-      }
-    })();
-  }, [syncUserLocationToMap, loadStationDetail]);
-
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      // cached() önbellekte kayıt yokken ağ hatasını fırlatır (ilk açılış + çevrimdışı);
-      // ekran boş listeyle açılmalı, sonsuz yüklemede kalmamalı.
-      const empty = { data: [] as any[], stale: true, at: 0 };
-      const [stRes, routesRes] = await Promise.all([
-        ApiService.getBusStationsWithCache().catch((e) => {
-          console.log('Duraklar yüklenemedi:', e);
-          return empty as Awaited<ReturnType<typeof ApiService.getBusStationsWithCache>>;
-        }),
-        ApiService.getAllRoutesWithCache().catch((e) => {
-          console.log('Hatlar yüklenemedi:', e);
-          return empty as Awaited<ReturnType<typeof ApiService.getAllRoutesWithCache>>;
-        }),
-      ]);
-      const stList = stRes.data;
-      const officialRoutes = routesRes.data;
-      setStations(stList);
-      setAllRoutes(officialRoutes);
-      setTransitStale(stRes.stale || routesRes.stale);
-      setTransitAt(Math.max(stRes.at, routesRes.at));
-
-      if (stList.length > 0 && !didLocateSelectRef.current && !didAutoSelectRef.current) {
-        didAutoSelectRef.current = true;
-        const uLoc = userLocationRef.current;
-        if (uLoc) {
-          const withCoords = stList.filter((s) => s.lat && s.lng);
-          if (withCoords.length > 0) {
-            let nearest = withCoords[0];
-            let minDist = Infinity;
-            for (const s of withCoords) {
-              const d = haversineDistance(uLoc.lat, uLoc.lng, s.lat!, s.lng!);
-              if (d < minDist) {
-                minDist = d;
-                nearest = s;
-              }
-            }
-            didLocateSelectRef.current = true;
-            await loadStationDetail(nearest, false, false);
-          }
-        } else {
-          const withCoords = stList.find((s) => s.lat && s.lng) || stList[0];
-          await loadStationDetail(withCoords, false, false);
-        }
-      }
-      setLoading(false);
-    }
-    loadData();
-  }, [loadStationDetail]);
-
-  // Konum gelince bir kez en yakın durağa geç (haritayı kullanıcı konumundan uzaklaştırmadan)
-  useEffect(() => {
-    if (!userLocation || stations.length === 0 || didLocateSelectRef.current) return;
-    const withCoords = stations.filter((s) => s.lat && s.lng);
-    if (withCoords.length === 0) return;
-
-    let nearest = withCoords[0];
-    let minDist = Infinity;
-    for (const s of withCoords) {
-      const d = haversineDistance(userLocation.lat, userLocation.lng, s.lat!, s.lng!);
-      if (d < minDist) {
-        minDist = d;
-        nearest = s;
-      }
-    }
-    didLocateSelectRef.current = true;
-    loadStationDetail(nearest, false, false);
-  }, [userLocation, stations, loadStationDetail]);
-
-  // Canlı otobüs konumlarını periyodik yenile
-  useEffect(() => {
-    const interval = setInterval(loadLiveBuses, 20000);
-    return () => clearInterval(interval);
-  }, [loadLiveBuses]);
-
-  // Web: iframe postMessage dinle
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const handler = (event: MessageEvent) => {
-      try {
-        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        if (data?.type === 'mapReady') {
-          isMapReadyRef.current = true;
-          if (userLocationRef.current) {
-            syncUserLocationToMap(userLocationRef.current, true);
-          }
-        } else if (data?.type === 'mapTap') {
-          enterCityLive();
-        } else if (data?.type === 'station' && data.id) {
-          const st = stations.find((s) => String(s.id) === String(data.id));
-          if (st) loadStationDetail(st);
-        }
-      } catch {
-        // ignore
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, [stations, loadStationDetail, syncUserLocationToMap, enterCityLive]);
-
-  useEffect(() => {
-    Animated.spring(sheetAnim, {
-      toValue: sheetExpanded ? 0 : 1,
-      useNativeDriver: true,
-      tension: 65,
-      friction: 11,
-    }).start();
-  }, [sheetExpanded, sheetAnim]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 8,
-      onPanResponderRelease: (_, g) => {
-        if (g.dy > 40) setSheetExpanded(false);
-        else if (g.dy < -40) setSheetExpanded(true);
-      },
-    })
-  ).current;
-
-  const sortedStations = useMemo(() => {
-    let list = [...stations];
-    if (userLocation) {
-      list = list
-        .map((s) => ({
-          ...s,
-          _distance:
-            s.lat && s.lng
-              ? haversineDistance(userLocation.lat, userLocation.lng, s.lat, s.lng)
-              : 999,
-        }))
-        .sort((a, b) => (a as any)._distance - (b as any)._distance);
-    }
-    return list;
-  }, [stations, userLocation]);
-
-  const surroundingStations = useMemo(() => {
-    if (nearbyStations.length > 0) {
-      return nearbyStations;
-    }
-    return sortedStations.slice(0, 10);
-  }, [nearbyStations, sortedStations]);
-
-  const normQuery = useMemo(() => normalizeText(searchQuery), [searchQuery]);
-
-  const matchingRoutes = useMemo(() => {
-    if (!normQuery) return allRoutes.slice(0, 15);
-    return allRoutes.filter((rt) => {
-      const matchHatNo = normalizeText(String(rt.hatNo)).includes(normQuery) ||
-                        normalizeText(`hat ${rt.hatNo}`).includes(normQuery);
-      const matchKod = normalizeText(rt.kod).includes(normQuery);
-      const matchAciklama = normalizeText(rt.aciklama).includes(normQuery);
-      return matchHatNo || matchKod || matchAciklama;
+    // Durakları eşleştir
+    const matchedStops: { station: BusStation; index: number }[] = [];
+    selectedRoute.mainStops.forEach((sName, idx) => {
+      const norm = normalizeText(sName);
+      const st = stations.find(
+        (s) => s.lat && s.lng && (normalizeText(s.name).includes(norm) || norm.includes(normalizeText(s.name)))
+      );
+      if (st) matchedStops.push({ station: st, index: idx });
     });
-  }, [allRoutes, normQuery]);
+    if (matchedStops.length === 0) return null;
+
+    // Otobüse en yakın durak indeksi
+    let busIndex = 0;
+    let minD = Infinity;
+    matchedStops.forEach(({ station, index }) => {
+      const d = haversineDistance(bus.enlem!, bus.boylam!, station.lat!, station.lng!);
+      if (d < minD) {
+        minD = d;
+        busIndex = index;
+      }
+    });
+
+    // Otobüsün önündeki duraklar
+    const ahead = matchedStops.filter((m) => m.index >= busIndex);
+    const candidates = ahead.length > 0 ? ahead : matchedStops;
+
+    for (const { station, index } of candidates) {
+      const walkDistKm = haversineDistance(userLocation.lat, userLocation.lng, station.lat!, station.lng!);
+      const walkMin = Math.round((walkDistKm / 5) * 60); // 5 km/h
+      const stopsAhead = Math.max(0, index - busIndex);
+      const busArrivalMin = Math.max(1, Math.round((stopsAhead * 0.45 / 20) * 60 + stopsAhead * 0.5));
+
+      if (walkMin <= busArrivalMin + 2) {
+        return {
+          station,
+          walkMin,
+          busArrivalMin,
+          urgent: walkMin >= busArrivalMin - 1,
+        };
+      }
+    }
+    const fallback = candidates[0];
+    const wDist = haversineDistance(userLocation.lat, userLocation.lng, fallback.station.lat!, fallback.station.lng!);
+    return {
+      station: fallback.station,
+      walkMin: Math.max(1, Math.round((wDist / 5) * 60)),
+      busArrivalMin: 2,
+      urgent: true,
+    };
+  }, [userLocation, selectedRoute, allLiveVehicles, stations]);
+
+  // Arama eşleşmeleri
+  const normSearchQuery = useMemo(() => normalizeText(searchQuery), [searchQuery]);
+  const matchingRoutes = useMemo(() => {
+    if (!normSearchQuery) return allRoutes.slice(0, 15);
+    return allRoutes.filter((rt) => {
+      const mNo = normalizeText(String(rt.hatNo)).includes(normSearchQuery);
+      const mKod = normalizeText(rt.kod).includes(normSearchQuery);
+      const mDesc = normalizeText(rt.aciklama).includes(normSearchQuery);
+      return mNo || mKod || mDesc;
+    });
+  }, [allRoutes, normSearchQuery]);
 
   const matchingStations = useMemo(() => {
-    if (!normQuery) return sortedStations.slice(0, 20);
-    return sortedStations.filter((st) => {
-      const matchName = normalizeText(st.name).includes(normQuery);
-      const matchCode = normalizeText(st.code).includes(normQuery) ||
-                        normalizeText(st.id).includes(normQuery);
-      const matchLines = st.lines.some((l) => normalizeText(l).includes(normQuery));
-      return matchName || matchCode || matchLines;
-    }).slice(0, 35);
-  }, [sortedStations, normQuery]);
-
-  // F6: Durak adıyla arama → eşleşen ilk duraklardan geçen hatlar ("… durağından geçiyor")
-  const stopRoutesCacheRef = useRef<Map<string, RouteLineItem[]>>(new Map());
-  const [stopRouteHits, setStopRouteHits] = useState<{ route: RouteLineItem; stopName: string }[]>([]);
-  useEffect(() => {
-    if (!normQuery || normQuery.length < 3 || matchingStations.length === 0) {
-      setStopRouteHits([]);
-      return;
-    }
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      const targets = matchingStations.slice(0, 2);
-      const results = await Promise.all(
-        targets.map(async (st) => {
-          const cache = stopRoutesCacheRef.current;
-          if (!cache.has(st.id)) cache.set(st.id, await ApiService.getStationRoutes(st.id));
-          return { st, routes: cache.get(st.id) || [] };
-        })
-      );
-      if (cancelled) return;
-      const seen = new Set<string>();
-      const hits: { route: RouteLineItem; stopName: string }[] = [];
-      results.forEach(({ st, routes: rs }) =>
-        rs.forEach((r) => {
-          if (seen.has(r.kod) || matchingRoutes.some((m) => m.kod === r.kod)) return;
-          seen.add(r.kod);
-          hits.push({ route: r, stopName: st.name });
-        })
-      );
-      setStopRouteHits(hits.slice(0, 8));
-    }, 350); // yazarken her tuşta istek atmamak için
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [normQuery, matchingStations, matchingRoutes]);
-
-  const mapStations = useMemo(
-    () =>
-      stations
-        .filter((s) => s.lat && s.lng)
-        .map((s) => ({
-          id: s.id,
-          name: s.name,
-          code: s.code,
-          lat: s.lat!,
-          lng: s.lng!,
-          direction: s.direction,
-        })),
-    [stations]
-  );
-
-  const selectedDistance = useMemo(() => {
-    if (!selectedStation?.lat || !selectedStation?.lng || !userLocation) return null;
-    return haversineDistance(
-      userLocation.lat,
-      userLocation.lng,
-      selectedStation.lat,
-      selectedStation.lng
-    );
-  }, [selectedStation, userLocation]);
-
-  const serviceUpdateText = useMemo(() => {
-    const delayed = stationBuses.filter(
-      (b) => b.remainingTimeCurr != null && b.remainingTimeCurr >= 8
-    );
-    if (delayed.length > 0) {
-      const line = delayed[0].busLineNo || delayed[0].busLineCode;
-      return `Hat ${line} şu an ${delayed[0].remainingTimeCurr} dk içinde geliyor.`;
-    }
-    if (liveBuses.length > 0) {
-      return `${liveBuses.length} otobüs haritada canlı takip ediliyor.`;
-    }
-    return 'Canlı sefer bilgileri Elazığ Belediyesi API üzerinden güncelleniyor.';
-  }, [stationBuses, liveBuses]);
-
-  const sheetTranslateY = sheetAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 230],
-  });
-
-  const fabTranslateY = sheetAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-210, 0],
-  });
-
-  const goToMyLocation = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
-      setUserLocation(coords);
-      userLocationRef.current = coords;
-      setMapCenter(coords);
-      syncUserLocationToMap(coords, true);
-
-      // F1: Sunucunun hazır yakın duraklarını al
-      try {
-        const nearby = await ApiService.getNearbyStations(coords.lat, coords.lng);
-        if (nearby.length > 0) {
-          setNearbyStations(nearby);
-          loadStationDetail(nearby[0], false, true);
-          return;
-        }
-      } catch (err) {
-        console.log('Konuma gitme yakın duraklar hatası:', err);
-      }
-
-      const withCoords = stations.filter((s) => s.lat && s.lng);
-      if (withCoords.length > 0) {
-        let nearest = withCoords[0];
-        let minDist = Infinity;
-        for (const s of withCoords) {
-          const d = haversineDistance(coords.lat, coords.lng, s.lat!, s.lng!);
-          if (d < minDist) {
-            minDist = d;
-            nearest = s;
-          }
-        }
-        loadStationDetail(nearest, false, true);
-      }
-    } catch (e) {
-      console.log('Konum alma hatası:', e);
-    }
-  };
-
-  // Build HTML ONCE on initial load to prevent WebView reloads, zoom resets, & white flashes
-  const initialLeafletHtml = useMemo(
-    () =>
-      buildLeafletHtml(
-        mapStations,
-        liveBuses.map((b) => ({
-          plaka: b.plaka,
-          hatkodu: b.hatkodu,
-          enlem: b.enlem || 0,
-          boylam: b.boylam || 0,
-          istikamet: b.istikamet,
-          hiz: b.hiz,
-        })),
-        userLocation || ELAZIG_CENTER,
-        null,
-        userLocation
-      ),
-    [mapStations.length > 0]
-  );
-
-  // Inject live bus marker updates dynamically without reloading WebView!
-  useEffect(() => {
-    if (webViewRef.current && liveBuses.length > 0) {
-      const busPayload = liveBuses.map((b) => ({
-        plaka: b.plaka,
-        hatkodu: b.hatkodu,
-        enlem: b.enlem || 0,
-        boylam: b.boylam || 0,
-        istikamet: b.istikamet,
-        hiz: b.hiz,
-      }));
-      const js = `if (window.updateBuses) { window.updateBuses(${JSON.stringify(busPayload)}); } true;`;
-      webViewRef.current.injectJavaScript(js);
-    }
-  }, [liveBuses]);
-
-  // Inject user location pulse marker dynamically when user location is retrieved
-  useEffect(() => {
-    if (webViewRef.current && userLocation) {
-      const js = `if (window.updateUserLocation) { window.updateUserLocation(${JSON.stringify(userLocation)}); } true;`;
-      webViewRef.current.injectJavaScript(js);
-    }
-  }, [userLocation]);
+    if (!normSearchQuery) return stations.slice(0, 15);
+    return stations.filter((st) => {
+      const mName = normalizeText(st.name).includes(normSearchQuery);
+      const mCode = normalizeText(st.code).includes(normSearchQuery);
+      return mName || mCode;
+    }).slice(0, 25);
+  }, [stations, normSearchQuery]);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle={Theme.colors.statusBar} backgroundColor={Theme.colors.surface} />
+    <View style={styles.container}>
+      <StatusBar barStyle={Theme.colors.statusBar} backgroundColor="transparent" translucent />
 
-      {/* Top App Bar */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View>
-            <Text style={styles.headerTitle}>Ulaşım</Text>
-            <Text style={styles.headerSub}>
-              {refreshingBuses ? 'Canlı veriler güncelleniyor…' : `${stations.length || '—'} durak · ${allRoutes.length || '—'} hat · canlı`}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.headerRight}>
-          {refreshingBuses && <ActivityIndicator size="small" color={Theme.colors.accent} />}
-          {cityLive && (
-            <TouchableOpacity style={styles.liveChip} onPress={exitCityLive} activeOpacity={0.8}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveChipText}>{liveBuses.length} otobüs</Text>
-              <Ionicons name="close" size={12} color="#fff" />
-            </TouchableOpacity>
-          )}
+      {/* ── 1. TAM EKRAN HARİTA KATMANI ────────────────────────────────────── */}
+      <View style={styles.mapContainer}>
+        <LeafletMap
+          ref={mapRef}
+          markers={mapMarkers}
+          selectedId={selectedStation?.id ?? null}
+          center={userLocation || ELAZIG_CENTER}
+          userLocation={userLocation}
+          reducedMotion={reducedMotion}
+          onMarkerPress={(marker) => {
+            const st = stations.find((s) => String(s.id) === String(marker.id));
+            if (st) handleSelectStation(st);
+          }}
+          onVehiclePress={handleSelectVehicle}
+          onFollowCancel={() => setFollowedPlate(null)}
+          onMapTap={() => {
+            if (snapPoint === 'full') setSnapPoint('half');
+          }}
+        />
+      </View>
+
+      {/* ── 2. YÜZEN ÜST ARAMA & HAT ÇİPLERİ ŞERİDİ ────────────────────────── */}
+      <SafeAreaView style={styles.topFloatingArea} edges={['top']} pointerEvents="box-none">
+        {/* Satır 1: [≡ Hatlar]  🔍 Durak, hat veya yer ara  [Nasıl Giderim] */}
+        <View style={styles.topSearchRow}>
           <TouchableOpacity
-            style={styles.cardChip}
-            onPress={() => setCardModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="credit-card-chip-outline" size={16} color="#fff" />
-            <Text style={styles.cardChipText}>
-              {cardInfo.bakiye !== undefined ? `₺${cardInfo.bakiye.toFixed(2)}` : 'Kart'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.avatarBtn}
-            onPress={() => setProfileModalVisible(true)}
+            style={styles.linesIconBtn}
+            onPress={toggleCityWideMode}
             activeOpacity={0.85}
           >
-            <Text style={styles.avatarText}>
-              {(userProfile?.displayName || 'M').charAt(0).toUpperCase()}
+            <MaterialCommunityIcons
+              name={mode === 'city' ? 'map' : 'format-list-bulleted'}
+              size={20}
+              color={Theme.colors.primary}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.searchBarTouch}
+            onPress={() => {
+              setMode('search');
+              setSnapPoint('full');
+            }}
+            activeOpacity={0.9}
+          >
+            <Ionicons name="search" size={17} color={Theme.colors.textMuted} />
+            <Text style={styles.searchBarText} numberOfLines={1}>
+              {selectedStation
+                ? `${selectedStation.name} · Hat veya durak ara`
+                : 'Durak adı, kod veya hat ara...'}
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.tripPlannerBtn}
+            onPress={() => router.push('/trip_planner' as any)}
+            activeOpacity={0.85}
+          >
+            <MaterialCommunityIcons name="routes" size={20} color="#fff" />
+          </TouchableOpacity>
         </View>
-      </View>
 
-      {/* Top Search Bar — Always visible for 1-tap search */}
-      <View style={styles.topSearchBarContainer}>
-        <TouchableOpacity
-          style={styles.topSearchBar}
-          onPress={() => {
-            setShowSearch(true);
-            setShowRoutesPanel(false);
-          }}
-          activeOpacity={0.88}
-        >
-          <Ionicons name="search" size={18} color={Theme.colors.primary} />
-          <Text style={styles.topSearchPlaceholder} numberOfLines={1}>
-            {selectedStation
-              ? `${selectedStation.name} • Durak veya Hat Ara...`
-              : 'Durak adı, kod (Örn: 701) veya Hat ara (Örn: 27)...'}
-          </Text>
-          <View style={styles.topSearchAction}>
-            <Text style={styles.topSearchActionText}>Ara</Text>
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tripPlannerBtn}
-          onPress={() => router.push('/trip_planner' as any)}
-          activeOpacity={0.85}
-          accessibilityLabel="Nasıl Giderim Rota Planlayıcı"
-        >
-          <MaterialCommunityIcons name="routes" size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {transitStale && (
-        <View style={styles.transitStaleBanner}>
-          <Ionicons name="cloud-offline-outline" size={14} color="#0369a1" />
-          <Text style={styles.transitStaleText}>
-            Çevrimdışı — son güncelleme {formatLastUpdated(transitAt)}
-          </Text>
-        </View>
-      )}
-
-      {/* Main Canvas */}
-      <View style={styles.mainCanvas}>
-        {/* Full-screen Map */}
-            {Platform.OS === 'web' ? (
-              <View style={styles.mapFull}>
-                {React.createElement('iframe', {
-                  ref: iframeRef,
-                  srcDoc: initialLeafletHtml,
-                  style: { width: '100%', height: '100%', border: 'none' },
-                  title: 'Elazığ Canlı Transit Haritası',
-                })}
-                <View style={styles.mapGradient} pointerEvents="none" />
-              </View>
-            ) : (
-              <View style={styles.mapFull}>
-                <WebView
-                  ref={webViewRef}
-                  originWhitelist={['*']}
-                  source={{ html: initialLeafletHtml }}
-                  style={{ flex: 1, backgroundColor: Theme.colors.surfaceVariant }}
-                  onMessage={(event) => {
-                    try {
-                      const data = JSON.parse(event.nativeEvent.data);
-                      if (data.type === 'mapReady') {
-                        isMapReadyRef.current = true;
-                        if (userLocationRef.current) {
-                          syncUserLocationToMap(userLocationRef.current, true);
-                        }
-                      } else if (data.type === 'mapTap') {
-                        enterCityLive();
-                      } else if (data.type === 'station' && data.id) {
-                        const st = stations.find((s) => String(s.id) === String(data.id));
-                        if (st) loadStationDetail(st);
-                      }
-                    } catch (e) {
-                      console.log('WebView message error:', e);
-                    }
-                  }}
-                  onLoadEnd={() => {
-                    setTimeout(() => {
-                      isMapReadyRef.current = true;
-                      if (userLocationRef.current) {
-                        syncUserLocationToMap(userLocationRef.current, true);
-                      }
-                    }, 350);
-                  }}
-                  javaScriptEnabled={true}
-                  domStorageEnabled={true}
-                  startInLoadingState={false}
-                  scalesPageToFit={true}
+        {/* Satır 2: Hat çipleri strip + Canlı Rozet */}
+        <View style={styles.routeChipsRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.routeChipsScroll}
+          >
+            {sortedRouteChips.slice(0, 18).map((rt) => {
+              const activeCount = activeBusCountsByRoute[rt.kod] || 0;
+              const isSelected = selectedRoute?.routeCode === rt.kod;
+              return (
+                <RouteChip
+                  key={rt.kod}
+                  routeCode={String(rt.hatNo || rt.kod)}
+                  activeBusCount={activeCount}
+                  selected={isSelected}
+                  onPress={() => handleSelectRoute(rt.kod, rt.aciklama)}
                 />
-                <View style={styles.mapGradient} pointerEvents="none" />
+              );
+            })}
+          </ScrollView>
+
+          <LiveBadge
+            state={liveStatus}
+            text={liveStatus === 'live' ? 'canlı' : 'kesik'}
+            count={allLiveVehicles.length}
+            style={styles.liveBadgeFloating}
+          />
+        </View>
+      </SafeAreaView>
+
+      {/* ── 3. SAĞ ALT YÜZEN EYLEM DÜĞMELERİ ───────────────────────────────── */}
+      <View
+        style={[
+          styles.fabColumn,
+          { bottom: snapPoint === 'collapsed' ? 86 : snapPoint === 'full' ? 20 : SCREEN_HEIGHT * 0.48 },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.fabBtn}
+          onPress={() => mapRef.current?.toggleBaseLayer()}
+          activeOpacity={0.85}
+          accessibilityLabel="Harita / Uydu"
+        >
+          <MaterialCommunityIcons name="layers-outline" size={22} color={Theme.colors.primary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.fabBtn}
+          onPress={toggleCityWideMode}
+          activeOpacity={0.85}
+          accessibilityLabel="Şehir Geneli Modu"
+        >
+          <MaterialCommunityIcons
+            name="swap-vertical"
+            size={22}
+            color={mode === 'city' ? Theme.colors.live : Theme.colors.primary}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.fabBtn, styles.fabBtnPrimary]}
+          onPress={goToMyLocation}
+          activeOpacity={0.85}
+          accessibilityLabel="Konumuma Git"
+        >
+          <MaterialCommunityIcons name="crosshairs-gps" size={22} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {/* ── 4. TEK ALT PANEL (BOTTOM SHEET) ────────────────────────────────── */}
+      <BottomSheet
+        snapPoint={snapPoint}
+        onSnapChange={setSnapPoint}
+        header={
+          <View style={styles.sheetHeaderContainer}>
+            {mode === 'stop' && selectedStation && (
+              <View style={styles.sheetHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetTitle} numberOfLines={1}>{selectedStation.name}</Text>
+                  <Text style={styles.sheetSubtitle}>
+                    {userLocation && selectedStation.lat && selectedStation.lng
+                      ? `${formatDistance(haversineDistance(userLocation.lat, userLocation.lng, selectedStation.lat, selectedStation.lng))} · `
+                      : ''}
+                    {selectedStation.code ? `Durak ${selectedStation.code}` : 'Elazığ Belediyesi'}
+                  </Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <TouchableOpacity
+                    style={styles.headerActionBtn}
+                    onPress={async () => {
+                      const next = favoriteStop?.id === selectedStation.id ? null : { id: selectedStation.id, name: selectedStation.name };
+                      setFavoriteStop(next);
+                      await PrefsService.setFavoriteStop(next);
+                    }}
+                  >
+                    <Ionicons
+                      name={favoriteStop?.id === selectedStation.id ? 'star' : 'star-outline'}
+                      size={20}
+                      color={favoriteStop?.id === selectedStation.id ? '#f59e0b' : Theme.colors.textMuted}
+                    />
+                  </TouchableOpacity>
+
+                  {selectedStation.lat && selectedStation.lng && (
+                    <TouchableOpacity
+                      style={styles.headerActionBtn}
+                      onPress={() => Linking.openURL(`https://www.google.com/maps?q=${selectedStation.lat},${selectedStation.lng}`)}
+                    >
+                      <Ionicons name="navigate-outline" size={19} color={Theme.colors.primary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             )}
 
-            {/* Enhanced Search overlay for both Stations and Routes */}
-            {showSearch && (
-              <View style={styles.searchOverlay}>
-                <View style={styles.searchHeader}>
-                  <View style={styles.searchBar}>
-                    <Ionicons name="search" size={18} color={Theme.colors.primary} />
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Durak adı, kod veya Hat ara (Örn: 27, Valilik)..."
-                      placeholderTextColor={Theme.colors.textMuted}
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      autoFocus
-                    />
-                    {searchQuery.length > 0 && (
-                      <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
-                        <Ionicons name="close-circle" size={18} color={Theme.colors.textMuted} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setShowSearch(false);
-                      setSearchQuery('');
-                    }}
-                    style={styles.searchCloseBtn}
-                  >
-                    <Ionicons name="close" size={22} color={Theme.colors.primary} />
-                  </TouchableOpacity>
+            {mode === 'route' && selectedRoute && (
+              <View style={styles.sheetHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetTitle} numberOfLines={1}>{selectedRoute.routeName}</Text>
+                  <Text style={styles.sheetSubtitle}>
+                    {selectedRoute.totalStops ? `${selectedRoute.totalStops} durak · ` : ''}
+                    {allLiveVehicles.filter((v) => (v.hatkodu || (v as any).routeCode) === selectedRoute.routeCode).length} aktif araç
+                  </Text>
                 </View>
 
-                {/* Filter Tabs */}
-                <View style={styles.filterTabsRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <TouchableOpacity
-                    style={[styles.filterChip, searchFilter === 'all' && styles.filterChipActive]}
-                    onPress={() => setSearchFilter('all')}
+                    style={[styles.directionToggleBtn, scheduleDirection === 'G' && styles.directionToggleActive]}
+                    onPress={() => changeScheduleDayOrDirection(scheduleDay, 'G')}
                   >
-                    <Text style={[styles.filterChipText, searchFilter === 'all' && styles.filterChipTextActive]}>
-                      Tümü
-                    </Text>
+                    <Text style={[styles.directionToggleText, scheduleDirection === 'G' && styles.directionToggleTextActive]}>Gidiş</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.filterChip, searchFilter === 'routes' && styles.filterChipActive]}
-                    onPress={() => setSearchFilter('routes')}
+                    style={[styles.directionToggleBtn, scheduleDirection === 'D' && styles.directionToggleActive]}
+                    onPress={() => changeScheduleDayOrDirection(scheduleDay, 'D')}
                   >
-                    <MaterialCommunityIcons
-                      name="routes"
-                      size={14}
-                      color={searchFilter === 'routes' ? '#fff' : Theme.colors.secondary}
-                    />
-                    <Text style={[styles.filterChipText, searchFilter === 'routes' && styles.filterChipTextActive]}>
-                      Hatlar ({matchingRoutes.length})
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.filterChip, searchFilter === 'stations' && styles.filterChipActive]}
-                    onPress={() => setSearchFilter('stations')}
-                  >
-                    <MaterialCommunityIcons
-                      name="bus-stop"
-                      size={14}
-                      color={searchFilter === 'stations' ? '#fff' : Theme.colors.primary}
-                    />
-                    <Text style={[styles.filterChipText, searchFilter === 'stations' && styles.filterChipTextActive]}>
-                      Duraklar ({matchingStations.length})
-                    </Text>
+                    <Text style={[styles.directionToggleText, scheduleDirection === 'D' && styles.directionToggleTextActive]}>Dönüş</Text>
                   </TouchableOpacity>
                 </View>
+              </View>
+            )}
 
-                <ScrollView
-                  style={styles.searchResults}
-                  contentContainerStyle={styles.searchResultsContent}
-                  keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator={false}
+            {mode === 'vehicle' && selectedVehicle && (
+              <View style={styles.sheetHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetTitle}>{selectedVehicle.plaka || 'Canlı Otobüs'}</Text>
+                  <Text style={styles.sheetSubtitle}>Hat {selectedVehicle.hatkodu || selectedVehicle.routeCode || '—'}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.headerActionBtn}
+                  onPress={() => setMode('city')}
                 >
-                  {/* Direct query action if numeric */}
-                  {/^\d+$/.test(normQuery) && (
-                    <TouchableOpacity
-                      style={styles.directActionCard}
-                      onPress={() => loadRouteDetail(normQuery, `Hat ${normQuery}`)}
-                    >
-                      <View style={styles.directActionIcon}>
-                        <MaterialCommunityIcons name="bus-clock" size={20} color="#fff" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.directActionTitle}>Hat {normQuery} Canlı Takip & Seferleri</Text>
-                        <Text style={styles.directActionSub}>Bu hattın canlı otobüslerini ve duraklarını haritada gör</Text>
-                      </View>
-                      <Ionicons name="arrow-forward-circle" size={22} color={Theme.colors.secondary} />
+                  <Ionicons name="close" size={20} color={Theme.colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {mode === 'city' && (
+              <View style={styles.sheetHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetTitle}>Şehir Geneli Ulaşım</Text>
+                  <Text style={styles.sheetSubtitle}>{allLiveVehicles.length} otobüs canlı seferde</Text>
+                </View>
+                <LiveBadge state={liveStatus} text="canlı" count={allLiveVehicles.length} />
+              </View>
+            )}
+
+            {mode === 'search' && (
+              <View style={styles.sheetHeaderRow}>
+                <View style={styles.searchInputWrap}>
+                  <Ionicons name="search" size={17} color={Theme.colors.primary} />
+                  <TextInput
+                    style={styles.searchInputField}
+                    placeholder="Durak veya hat ara..."
+                    placeholderTextColor={Theme.colors.textMuted}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoFocus
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery('')}>
+                      <Ionicons name="close-circle" size={18} color={Theme.colors.textMuted} />
                     </TouchableOpacity>
                   )}
-
-                  {/* Empty query: Quick Lines & Recents */}
-                  {!normQuery && allRoutes.length > 0 && (
-                    <View style={styles.quickSection}>
-                      <Text style={styles.quickSectionTitle}>Sık Kullanılan Hatlar</Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickChipsScroll}>
-                        {allRoutes.slice(0, 10).map((rt) => (
-                          <TouchableOpacity
-                            key={`quick-${rt.kod}`}
-                            style={styles.quickLineChip}
-                            onPress={() => loadRouteDetail(rt.kod, rt.aciklama)}
-                          >
-                            <Text style={styles.quickLineChipText}>Hat {rt.hatNo}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
-
-                  {/* Routes section */}
-                  {(searchFilter === 'all' || searchFilter === 'routes') && matchingRoutes.length > 0 && (
-                    <View style={styles.searchSection}>
-                      <View style={styles.searchSectionHeader}>
-                        <MaterialCommunityIcons name="routes" size={16} color={Theme.colors.secondary} />
-                        <Text style={styles.searchSectionTitle}>Otobüs Hatları ({matchingRoutes.length})</Text>
-                      </View>
-                      {matchingRoutes.map((rt) => (
+                </View>
+                <TouchableOpacity
+                  style={styles.headerActionBtn}
+                  onPress={() => {
+                    setMode('stop');
+                    setSnapPoint('half');
+                  }}
+                >
+                  <Ionicons name="close" size={22} color={Theme.colors.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        }
+      >
+        <ScrollView
+          style={styles.sheetContentScroll}
+          contentContainerStyle={styles.sheetContentInner}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ── BAĞLAM 1: DURAK MODU (STOP) ─────────────────────────────────── */}
+          {mode === 'stop' && selectedStation && (
+            <View style={styles.sheetSection}>
+              {/* Yaklaşan Otobüsler */}
+              <Text style={styles.sectionHeaderTitle}>Yaklaşan Otobüsler</Text>
+              {stationLoading && stationBuses.length === 0 ? (
+                <View style={styles.loadingBox}>
+                  <ActivityIndicator size="small" color={Theme.colors.live} />
+                  <Text style={styles.loadingText}>Otobüsler sorgulanıyor...</Text>
+                </View>
+              ) : stationBuses.length === 0 ? (
+                <Card style={styles.emptyCard}>
+                  <EmptyState
+                    icon="bus-clock"
+                    title="Yaklaşan otobüs yok"
+                    description="Şu an bu durağa yaklaşmakta olan aktif otobüs bulunamadı."
+                  />
+                </Card>
+              ) : (
+                <View style={{ gap: 8 }}>
+                  {stationBuses.slice(0, 5).map((bus, idx) => {
+                    const cdKey = `${bus.busLineCode}_${bus.busPlate || bus.busLineNo}`;
+                    const secs = busCountdowns[cdKey];
+                    return (
+                      <Card key={idx} style={styles.arrivalCard}>
                         <TouchableOpacity
-                          key={`rt-${rt.kod}`}
-                          style={styles.routeResultItem}
-                          onPress={() => loadRouteDetail(rt.kod, rt.aciklama)}
+                          style={styles.arrivalHeader}
+                          onPress={() => handleSelectApproachingBus(bus)}
+                          activeOpacity={0.7}
+                          accessibilityLabel="Otobüsü haritada göster"
                         >
-                          <View style={[styles.routeBadge, { backgroundColor: getBusColor(String(rt.hatNo)) }]}>
-                            <Text style={styles.routeBadgeText}>HAT {rt.hatNo}</Text>
+                          <View style={styles.arrivalBadge}>
+                            <Text style={styles.arrivalBadgeText}>HAT {bus.busLineNo || bus.busLineCode}</Text>
                           </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.routeResultName}>Hat {rt.hatNo} - {rt.kod}</Text>
-                            <Text style={styles.routeResultDesc} numberOfLines={1}>{rt.aciklama}</Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* F6: Aranan duraktan geçen hatlar */}
-                  {(searchFilter === 'all' || searchFilter === 'routes') && stopRouteHits.length > 0 && (
-                    <View style={styles.searchSection}>
-                      <View style={styles.searchSectionHeader}>
-                        <MaterialCommunityIcons name="bus-stop" size={16} color={Theme.colors.secondary} />
-                        <Text style={styles.searchSectionTitle}>Duraktan Geçen Hatlar ({stopRouteHits.length})</Text>
-                      </View>
-                      {stopRouteHits.map(({ route: rt, stopName }) => (
-                        <TouchableOpacity
-                          key={`sr-${rt.kod}`}
-                          style={styles.routeResultItem}
-                          onPress={() => loadRouteDetail(rt.kod, rt.aciklama)}
-                        >
-                          <View style={[styles.routeBadge, { backgroundColor: getBusColor(String(rt.hatNo)) }]}>
-                            <Text style={styles.routeBadgeText}>HAT {rt.hatNo}</Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.routeResultName}>Hat {rt.hatNo} - {rt.aciklama}</Text>
-                            <Text style={styles.routeResultDesc} numberOfLines={1}>{stopName} durağından geçiyor</Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* Stations section */}
-                  {(searchFilter === 'all' || searchFilter === 'stations') && matchingStations.length > 0 && (
-                    <View style={styles.searchSection}>
-                      <View style={styles.searchSectionHeader}>
-                        <MaterialCommunityIcons name="bus-stop" size={16} color={Theme.colors.primary} />
-                        <Text style={styles.searchSectionTitle}>Otobüs Durakları</Text>
-                      </View>
-                      {matchingStations.map((st) => (
-                        <TouchableOpacity
-                          key={`st-${st.id}`}
-                          style={styles.searchResultItem}
-                          onPress={() => {
-                            loadStationDetail(st);
-                            setShowSearch(false);
-                            setSearchQuery('');
-                          }}
-                        >
-                          <View style={styles.stationIconBox}>
-                            <MaterialCommunityIcons name="bus-stop" size={18} color={Theme.colors.primary} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.searchResultName}>{st.name}</Text>
-                            <Text style={styles.searchResultMeta}>
-                              {st.code}
-                              {st.direction ? ` · ${st.direction}` : ''}
-                              {(st as any)._distance != null && (st as any)._distance < 100
-                                ? ` · ${formatDistance((st as any)._distance)}`
-                                : ''}
+                          <View style={{ flex: 1, marginLeft: 10 }}>
+                            <Text style={styles.arrivalDest} numberOfLines={1}>
+                              {bus.busLineLongName || bus.busLineCode}
+                            </Text>
+                            <Text style={styles.arrivalMeta}>
+                              {bus.remainingNumberOfBusStops != null
+                                ? `${bus.remainingNumberOfBusStops} durak kaldı`
+                                : 'Yaklaşıyor'}
+                              {bus.busPlate ? ` · ${bus.busPlate}` : ''}
                             </Text>
                           </View>
-                          <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
+
+                          {/* G5 Geri Sayım Bileşeni */}
+                          <Countdown seconds={secs} />
+                          <Ionicons name="chevron-forward" size={14} color={Theme.colors.textMuted} style={{ marginLeft: 4 }} />
                         </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
 
-                  {/* No results */}
-                  {normQuery && matchingRoutes.length === 0 && matchingStations.length === 0 && (
-                    <View style={styles.noResultsBox}>
-                      <MaterialCommunityIcons name="bus-stop-covered" size={36} color={Theme.colors.textMuted} />
-                      <Text style={styles.noResultsTitle}>Sonuç Bulunamadı</Text>
-                      <Text style={styles.noResultsSub}>"{searchQuery}" ile eşleşen hat veya durak bulunamadı.</Text>
-                    </View>
-                  )}
-                </ScrollView>
-              </View>
-            )}
-
-            {/* Routes panel (layers) */}
-            {showRoutesPanel && (
-              <View style={styles.routesPanel}>
-                <View style={styles.routesPanelHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <MaterialCommunityIcons name="routes" size={20} color={Theme.colors.primary} />
-                    <Text style={styles.routesPanelTitle}>Hat Seferleri & Durakları</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setShowRoutesPanel(false)} style={{ padding: 4 }}>
-                    <Ionicons name="close" size={22} color={Theme.colors.primary} />
-                  </TouchableOpacity>
+                        {/* G8 Canlı Bildirim Butonu */}
+                        <View style={styles.arrivalFooter}>
+                          {(() => {
+                            const isActive =
+                              !!alertTarget &&
+                              alertTarget.stopId === selectedStation.id &&
+                              alertTarget.routeCode === bus.busLineCode;
+                            const isFired = isActive && !!alertTarget?.fired;
+                            const tint = isFired ? Theme.colors.success : isActive ? Theme.colors.live : Theme.colors.textMuted;
+                            return (
+                              <TouchableOpacity
+                                style={styles.notifyBtn}
+                                onPress={async () => {
+                                  if (isActive) {
+                                    setAlertTarget(null); // ikinci dokunuş: iptal
+                                    return;
+                                  }
+                                  const ok = await NotificationService.ensurePermission();
+                                  if (!ok) {
+                                    Alert.alert('Bildirim izni yok', 'Ayarlardan bildirim iznini açınca haber verebilirim.');
+                                    return;
+                                  }
+                                  setAlertTarget({
+                                    stopId: selectedStation.id,
+                                    routeCode: bus.busLineCode,
+                                    plate: bus.busPlate || undefined,
+                                    fired: false,
+                                  });
+                                }}
+                              >
+                                <Ionicons
+                                  name={isFired ? 'checkmark-circle' : isActive ? 'notifications' : 'notifications-outline'}
+                                  size={14}
+                                  color={tint}
+                                />
+                                <Text style={[styles.notifyBtnText, { color: tint }]}>
+                                  {isFired
+                                    ? 'Bildirildi ✓'
+                                    : isActive
+                                    ? '2 durak kala haber verilecek · iptal için dokun'
+                                    : 'Haber ver (2 durak kala)'}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })()}
+                        </View>
+                      </Card>
+                    );
+                  })}
                 </View>
+              )}
 
-                {/* All Elazığ bus lines horizontal picker */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.routeTabs} contentContainerStyle={{ paddingRight: 12 }}>
-                  {allRoutes.map((rt) => (
-                    <TouchableOpacity
-                      key={`panel-${rt.kod}`}
-                      style={[
-                        styles.routeTab,
-                        (selectedRoute?.routeCode === rt.kod || selectedRoute?.lineNo === rt.kod) && styles.routeTabActive,
-                      ]}
-                      onPress={() => loadRouteDetail(rt.kod, rt.aciklama)}
-                    >
-                      <Text
-                        style={[
-                          styles.routeTabText,
-                          (selectedRoute?.routeCode === rt.kod || selectedRoute?.lineNo === rt.kod) && styles.routeTabTextActive,
-                        ]}
-                      >
-                        Hat {rt.hatNo}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-
-                {selectedRoute && (
-                  <ScrollView style={styles.routeDetailScroll} showsVerticalScrollIndicator={false}>
-                    <View style={styles.routeHeaderRow}>
-                      <Text style={[styles.routeName, { flex: 1, marginRight: 8 }]} numberOfLines={2}>
-                        {selectedRoute.routeName}
-                      </Text>
+              {/* Bu Duraktan Geçen Hatlar */}
+              {selectedStation.lines && selectedStation.lines.length > 0 && (
+                <View style={{ marginTop: 14 }}>
+                  <Text style={styles.sectionHeaderTitle}>Bu Duraktan Geçen Hatlar</Text>
+                  <View style={styles.linesWrap}>
+                    {selectedStation.lines.map((l, i) => (
                       <TouchableOpacity
-                        style={styles.starBtn}
-                        onPress={() => toggleFavoriteRoute(selectedRoute.routeCode || selectedRoute.lineNo)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        key={i}
+                        style={styles.passingLineChip}
+                        onPress={() => handleSelectRoute(l)}
                       >
-                        <Ionicons
-                          name={
-                            favoriteRoutes.includes(selectedRoute.routeCode || '') ||
-                            favoriteRoutes.includes(selectedRoute.lineNo || '')
-                              ? 'star'
-                              : 'star-outline'
-                          }
-                          size={22}
-                          color={
-                            favoriteRoutes.includes(selectedRoute.routeCode || '') ||
-                            favoriteRoutes.includes(selectedRoute.lineNo || '')
-                              ? '#f59e0b'
-                              : Theme.colors.textMuted
-                          }
-                        />
-                      </TouchableOpacity>
-                    </View>
-                    {selectedRoute.priceInfo ? (
-                      <Text style={styles.routePrice}>💳 {selectedRoute.priceInfo}</Text>
-                    ) : null}
-                    {selectedRoute.totalStops ? (
-                      <Text style={styles.routeStopsCount}>
-                        🚏 Toplam {selectedRoute.totalStops} durak (Durağa dokunarak haritada görün)
-                      </Text>
-                    ) : null}
-
-                    {/* Interactive Route Stops List */}
-                    {selectedRoute.mainStops.map((stop, idx) => (
-                      <TouchableOpacity
-                        key={`${stop}-${idx}`}
-                        style={styles.routeStopRow}
-                        onPress={() => {
-                          const matched = stations.find(
-                            (s) =>
-                              normalizeText(s.name).includes(normalizeText(stop)) ||
-                              normalizeText(stop).includes(normalizeText(s.name))
-                          );
-                          if (matched) {
-                            loadStationDetail(matched);
-                          }
-                        }}
-                      >
-                        <View style={[styles.routeStopDot, idx === 0 && styles.routeStopDotFirst]} />
-                        <Text style={styles.routeStopName}>{stop}</Text>
-                        <Ionicons name="locate-outline" size={16} color={Theme.colors.secondary} />
+                        <MaterialCommunityIcons name="bus" size={14} color={Theme.colors.primary} />
+                        <Text style={styles.passingLineChipText}>Hat {l}</Text>
                       </TouchableOpacity>
                     ))}
-
-                    {/* Sefer Saatleri & Gün/Yön Seçici */}
-                    <View style={styles.scheduleSection}>
-                      <View style={styles.scheduleHeaderRow}>
-                        <Text style={styles.departuresTitle}>Sefer Saatleri</Text>
-                        <View style={styles.directionRow}>
-                          <TouchableOpacity
-                            style={[
-                              styles.directionChip,
-                              scheduleDirection === 'G' && styles.directionChipActive,
-                            ]}
-                            onPress={() => changeScheduleDayOrDirection(scheduleDay, 'G')}
-                            activeOpacity={0.7}
-                          >
-                            <Ionicons
-                              name="arrow-forward-circle"
-                              size={13}
-                              color={scheduleDirection === 'G' ? '#fff' : Theme.colors.primary}
-                            />
-                            <Text
-                              style={[
-                                styles.directionChipText,
-                                scheduleDirection === 'G' && styles.directionChipTextActive,
-                              ]}
-                            >
-                              Gidiş
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[
-                              styles.directionChip,
-                              scheduleDirection === 'D' && styles.directionChipActive,
-                            ]}
-                            onPress={() => changeScheduleDayOrDirection(scheduleDay, 'D')}
-                            activeOpacity={0.7}
-                          >
-                            <Ionicons
-                              name="arrow-back-circle"
-                              size={13}
-                              color={scheduleDirection === 'D' ? '#fff' : Theme.colors.primary}
-                            />
-                            <Text
-                              style={[
-                                styles.directionChipText,
-                                scheduleDirection === 'D' && styles.directionChipTextActive,
-                              ]}
-                            >
-                              Dönüş
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-
-                      {/* Gün Çipleri (Pzt ... Paz) */}
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.dayScroll}
-                        contentContainerStyle={styles.dayScrollContent}
-                      >
-                        {WEEKDAYS.map((day) => {
-                          const isDayToday = day.id === todayWeekday;
-                          const isSelected = day.id === scheduleDay;
-                          return (
-                            <TouchableOpacity
-                              key={day.id}
-                              style={[
-                                styles.dayChip,
-                                isSelected && styles.dayChipActive,
-                                isDayToday && !isSelected && styles.dayChipToday,
-                              ]}
-                              onPress={() => changeScheduleDayOrDirection(day.id, scheduleDirection)}
-                              activeOpacity={0.7}
-                            >
-                              <Text
-                                style={[
-                                  styles.dayChipText,
-                                  isSelected && styles.dayChipTextActive,
-                                  isDayToday && !isSelected && styles.dayChipTextToday,
-                                ]}
-                              >
-                                {day.label}
-                              </Text>
-                              {isDayToday && (
-                                <View
-                                  style={[
-                                    styles.todayDot,
-                                    isSelected && { backgroundColor: Theme.colors.surface },
-                                  ]}
-                                />
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
-
-                      {/* Saatler Izgarası */}
-                      {scheduleLoading ? (
-                        <View style={styles.scheduleLoadingRow}>
-                          <ActivityIndicator size="small" color={Theme.colors.primary} />
-                          <Text style={styles.scheduleLoadingText}>Saatler güncelleniyor...</Text>
-                        </View>
-                      ) : currentSchedules.length > 0 ? (
-                        <View style={styles.timeGrid}>
-                          {currentSchedules.map((s, i) => {
-                            const isNext = i === nextDepartureIndex;
-                            const isPast = isSelectedToday && nextDepartureIndex !== -1 && i < nextDepartureIndex;
-                            return (
-                              <View
-                                key={`${s.time}-${i}`}
-                                style={[
-                                  styles.timePill,
-                                  isPast && styles.timePillPast,
-                                  isNext && styles.timePillNext,
-                                ]}
-                              >
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                  <Text
-                                    style={[
-                                      styles.timePillText,
-                                      isPast && styles.timePillTextPast,
-                                      isNext && styles.timePillTextNext,
-                                    ]}
-                                  >
-                                    {s.time}
-                                  </Text>
-                                  {isNext && (
-                                    <View style={styles.nextBadge}>
-                                      <Text style={styles.nextBadgeText}>SONRAKİ</Text>
-                                    </View>
-                                  )}
-                                </View>
-                              </View>
-                            );
-                          })}
-                        </View>
-                      ) : (
-                        <Text style={styles.emptyScheduleText}>
-                          Bu gün ve yön için planlanmış sefer saati bulunamadı.
-                        </Text>
-                      )}
-                    </View>
-
-                    {/* Hat Yoğunluğu ve Gecikme İstatistiği (F15) */}
-                    <View style={styles.delayStatsSection}>
-                      <View style={styles.delayStatsHeader}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                          <MaterialCommunityIcons name="chart-bell-curve-cumulative" size={16} color={Theme.colors.primary} />
-                          <Text style={styles.delayStatsTitle}>Canlı Akış & Sefer Yoğunluğu</Text>
-                        </View>
-                        {delayStats && (
-                          <View style={[styles.delayStatusBadge, { backgroundColor: delayStats.statusColor + '20', borderColor: delayStats.statusColor }]}>
-                            <View style={[styles.delayStatusDot, { backgroundColor: delayStats.statusColor }]} />
-                            <Text style={[styles.delayStatusText, { color: delayStats.statusColor }]}>
-                              {delayStats.statusLabel}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-
-                      {delayStats ? (
-                        <>
-                          <View style={styles.delayMetaRow}>
-                            <Text style={styles.delayMetaText}>
-                              🚌 Aktif Araç: <Text style={{ fontWeight: '800', color: Theme.colors.textPrimary }}>{delayStats.activeVehicleCount}</Text>
-                            </Text>
-                            <Text style={styles.delayMetaText}>
-                              ⏱️ Kalkış Aralığı:{' '}
-                              <Text style={{ fontWeight: '800', color: Theme.colors.textPrimary }}>
-                                {delayStats.averageFrequencyMinutes != null ? `~${delayStats.averageFrequencyMinutes} dk` : '—'}
-                              </Text>
-                              {delayStats.totalDepartures > 0 ? ` (bugün ${delayStats.totalDepartures} sefer)` : ''}
-                            </Text>
-                          </View>
-
-                          {delayStats.hourlyStats.length > 0 && delayStats.totalDepartures > 0 ? (
-                            <>
-                              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartScroll}>
-                                <View style={styles.chartContainer}>
-                                  {(() => {
-                                    const maxDep = Math.max(1, ...delayStats.hourlyStats.map((s) => s.departures));
-                                    return delayStats.hourlyStats.map((item) => (
-                                      <View key={item.hour} style={styles.chartBarCol}>
-                                        <Text style={styles.chartBarVal}>{item.departures > 0 ? item.departures : ''}</Text>
-                                        <View style={styles.chartBarBg}>
-                                          <View
-                                            style={[
-                                              styles.chartBarFill,
-                                              {
-                                                height: `${item.departures > 0 ? Math.max(12, Math.round((item.departures / maxDep) * 100)) : 0}%`,
-                                                backgroundColor: item.isCurrentHour ? '#0284c7' : item.isPeak ? '#ea580c' : '#10b981',
-                                              },
-                                            ]}
-                                          />
-                                        </View>
-                                        <Text style={[styles.chartBarHour, item.isCurrentHour && styles.chartBarHourCurrent]}>
-                                          {item.hourLabel.split(':')[0]}
-                                        </Text>
-                                      </View>
-                                    ));
-                                  })()}
-                                </View>
-                              </ScrollView>
-                              <Text style={styles.chartLegend}>
-                                Saat başına planlı sefer (gidiş tarifesi) • 🟦 Şu anki saat • 🟧 Sık sefer saatleri
-                              </Text>
-                            </>
-                          ) : (
-                            <Text style={styles.chartLegend}>Bugün için tarife bilgisi alınamadı.</Text>
-                          )}
-                        </>
-                      ) : null}
-                    </View>
-                  </ScrollView>
-                )}
-              </View>
-            )}
-            {/* Floating Action Buttons */}
-            <Animated.View style={[styles.fabColumn, { transform: [{ translateY: fabTranslateY }] }]}>
-              <TouchableOpacity
-                style={styles.fabSecondary}
-                onPress={() => {
-                  setShowRoutesPanel((v) => !v);
-                  setShowSearch(false);
-                }}
-                activeOpacity={0.85}
-              >
-                <MaterialCommunityIcons name="layers-outline" size={22} color={Theme.colors.primary} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.fabPrimary} onPress={goToMyLocation} activeOpacity={0.85}>
-                <MaterialCommunityIcons name="crosshairs-gps" size={24} color="#fff" />
-              </TouchableOpacity>
-            </Animated.View>
-
-            {/* Bottom Sheet */}
-            <Animated.View
-              style={[styles.bottomSheet, { transform: [{ translateY: sheetTranslateY }] }]}
-              {...panResponder.panHandlers}
-            >
-              <TouchableOpacity
-                style={styles.dragHandleHit}
-                onPress={() => setSheetExpanded((v) => !v)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.dragHandle} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.sheetHeaderTouchable}
-                onPress={() => setSheetExpanded((v) => !v)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.sheetHeaderRow}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={styles.sheetTitle} numberOfLines={1}>
-                      {selectedStation?.name || 'Durak Seçin'}
-                    </Text>
-                    <View style={styles.sheetMetaRow}>
-                      <MaterialCommunityIcons
-                        name="near-me"
-                        size={14}
-                        color={Theme.colors.textMuted}
-                      />
-                      <Text style={styles.sheetMeta}>
-                        {selectedDistance != null
-                          ? formatDistance(selectedDistance)
-                          : selectedStation?.lines.length
-                          ? `${selectedStation.lines.length} hat geçiyor`
-                          : selectedStation?.direction || 'Konum bekleniyor'}
-                      </Text>
-                      {selectedStation?.code ? (
-                        <View style={styles.codeBadge}>
-                          <Text style={styles.codeBadgeText}>{selectedStation.code}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    {selectedStation ? (
-                      <TouchableOpacity
-                        style={styles.starBtn}
-                        onPress={() => toggleFavoriteStop(selectedStation)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Ionicons
-                          name={favoriteStop?.id === selectedStation.id ? 'star' : 'star-outline'}
-                          size={22}
-                          color={favoriteStop?.id === selectedStation.id ? '#f59e0b' : Theme.colors.textMuted}
-                        />
-                      </TouchableOpacity>
-                    ) : null}
-                    {selectedStation?.lat && selectedStation?.lng ? (
-                      <TouchableOpacity
-                        style={styles.detailsBtn}
-                        onPress={() =>
-                          Linking.openURL(
-                            `https://www.google.com/maps?q=${selectedStation.lat},${selectedStation.lng}`
-                          )
-                        }
-                      >
-                        <Text style={styles.detailsBtnText}>Yol Tarifi</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                    <Ionicons
-                      name={sheetExpanded ? 'chevron-down' : 'chevron-up'}
-                      size={20}
-                      color={Theme.colors.textMuted}
-                    />
                   </View>
                 </View>
-              </TouchableOpacity>
+              )}
+            </View>
+          )}
 
-              {/* Scrollable sheet body so content never clips or overlaps */}
-              <ScrollView
-                style={styles.sheetBodyScroll}
-                contentContainerStyle={styles.sheetBodyContent}
-                showsVerticalScrollIndicator={false}
-              >
-                {/* Live Arrivals */}
-                {stationLoading ? (
-                  <View style={styles.sheetLoading}>
-                    <ActivityIndicator size="small" color={Theme.colors.primary} />
-                    <Text style={styles.sheetLoadingText}>Yaklaşan otobüsler yükleniyor...</Text>
-                  </View>
-                ) : (
-                  <View style={styles.arrivalsGrid}>
-                    {stationBuses.length > 0 ? (
-                      stationBuses.slice(0, 4).map((bus, idx) => (
-                        <View
-                          key={`${bus.busLineCode}-${idx}`}
-                          style={[
-                            styles.arrivalCard,
-                            idx >= 2 && stationBuses.length === 3 && idx === 2
-                              ? styles.arrivalCardWide
-                              : null,
-                            stationBuses.length === 1 ? styles.arrivalCardWide : null,
-                          ]}
-                        >
-                          <View style={styles.arrivalCardTop}>
-                            <View
-                              style={[
-                                styles.hatBadge,
-                                { backgroundColor: getBusColor(String(bus.busLineNo || bus.busLineCode), idx) },
-                              ]}
-                            >
-                              <Text style={styles.hatBadgeText}>
-                                HAT {bus.busLineNo || bus.busLineCode || '—'}
-                              </Text>
-                            </View>
-                            <Text style={styles.arrivalMins}>
-                              {bus.remainingTimeCurr != null ? `${bus.remainingTimeCurr} dk` : '—'}
-                            </Text>
-                          </View>
-                          <Text style={styles.arrivalDest} numberOfLines={1}>
-                            {bus.busLineLongName || bus.busLineCode || '—'}
-                          </Text>
-                          {(bus.remainingNumberOfBusStops != null || bus.busPlate) && (
-                            <Text style={styles.arrivalNext} numberOfLines={1}>
-                              {bus.remainingNumberOfBusStops != null ? `${bus.remainingNumberOfBusStops} durak uzakta` : ''}
-                              {bus.remainingNumberOfBusStops != null && bus.busPlate ? ' · ' : ''}
-                              {bus.busPlate || ''}
-                            </Text>
-                          )}
-                          {bus.remainingTimeNext != null && (
-                            <Text style={styles.arrivalNext}>
-                              Sonraki: {bus.remainingTimeNext} dk
-                            </Text>
-                          )}
-                        </View>
-                      ))
-                    ) : (
-                      <View style={styles.arrivalCardWide}>
-                        <Text style={styles.noBusText}>
-                          Bu duraktan şu an yaklaşan aktif otobüs bulunamadı.
-                        </Text>
-                      </View>
+          {/* ── BAĞLAM 2: HAT MODU (ROUTE) ──────────────────────────────────── */}
+          {mode === 'route' && selectedRoute && (
+            <View style={styles.sheetSection}>
+              {/* G4: "Binebileceğin En İyi Durak" Kartı */}
+              {bestBoarding && (
+                <Card style={[styles.bestBoardingCard, bestBoarding.urgent && styles.bestBoardingUrgent]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons
+                      name="navigate-circle"
+                      size={22}
+                      color={bestBoarding.urgent ? Theme.colors.warning : Theme.colors.live}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bestBoardingTitle}>Binebileceğin En İyi Durak</Text>
+                      <Text style={styles.bestBoardingText}>
+                        <Text style={{ fontWeight: '800' }}>{bestBoarding.station.name}</Text> durağına{' '}
+                        <Text style={{ fontWeight: '800' }}>{bestBoarding.walkMin} dk</Text> yürü, otobüs{' '}
+                        <Text style={{ fontWeight: '800' }}>{bestBoarding.busArrivalMin} dk</Text> sonra orada.
+                      </Text>
+                    </View>
+                    {bestBoarding.urgent && (
+                      <Pill label="Acele Et" color={Theme.colors.warning} bg={Theme.colors.warningBg} />
                     )}
                   </View>
-                )}
+                </Card>
+              )}
 
-                {/* Nearby stations quick list */}
-                {surroundingStations.length > 1 && (
-                  <View style={{ marginTop: 12 }}>
-                    <Text style={styles.nearbySectionTitle}>Çevredeki Diğer Duraklar</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.nearbyScroll}
-                      contentContainerStyle={styles.nearbyScrollContent}
-                    >
-                      {surroundingStations.map((st) => (
+              {/* Güzergah Durak Listesi (G3 "Otobüs Burada" Ribbon ile) */}
+              <Text style={styles.sectionHeaderTitle}>Güzergah Durakları</Text>
+              <View style={styles.stopListContainer}>
+                {selectedRoute.mainStops.map((stopName, idx) => {
+                  // G3: Bu durak ile sonraki durak arasında canlı araç var mı?
+                  const norm = normalizeText(stopName);
+                  const matchedLiveBuses = allLiveVehicles.filter((v) => {
+                    const code = v.hatkodu || (v as any).routeCode;
+                    return code === selectedRoute.routeCode;
+                  });
+
+                  return (
+                    <View key={`${stopName}-${idx}`}>
+                      <TouchableOpacity
+                        style={styles.stopRow}
+                        onPress={() => {
+                          const st = stations.find((s) => normalizeText(s.name).includes(norm));
+                          if (st) handleSelectStation(st);
+                        }}
+                      >
+                        <View style={[styles.stopDot, idx === 0 && styles.stopDotStart]} />
+                        <Text style={styles.stopNameText}>{stopName}</Text>
+                        <Ionicons name="chevron-forward" size={14} color={Theme.colors.textMuted} />
+                      </TouchableOpacity>
+
+                      {/* G3 Ribbon: Eğer canlı araç bu durağın yakınındaysa */}
+                      {matchedLiveBuses.length > 0 && idx === 1 && (
                         <TouchableOpacity
-                          key={st.id}
-                          style={[
-                            styles.nearbyChip,
-                            selectedStation?.id === st.id && styles.nearbyChipActive,
-                          ]}
-                          onPress={() => loadStationDetail(st)}
+                          style={styles.busHereRibbon}
+                          onPress={() => handleSelectVehicle(matchedLiveBuses[0])}
                         >
-                          <MaterialCommunityIcons
-                            name="bus-stop"
-                            size={14}
-                            color={
-                              selectedStation?.id === st.id ? '#fff' : Theme.colors.primary
-                            }
-                          />
-                          <Text
-                            style={[
-                              styles.nearbyChipText,
-                              selectedStation?.id === st.id && styles.nearbyChipTextActive,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {st.name}
+                          <View style={styles.busHereDot} />
+                          <Text style={styles.busHereText}>
+                            🚌 {matchedLiveBuses[0].plaka || 'Otobüs'} · şu an burada (
+                            {matchedLiveBuses[0].hiz != null ? `${Math.round(matchedLiveBuses[0].hiz)} km/s` : 'canlı'}
+                            )
                           </Text>
+                          <Ionicons name="eye-outline" size={14} color={Theme.colors.live} />
                         </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-              </ScrollView>
-            </Animated.View>
-      </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
 
-      <CardQueryModal
-        visible={cardModalVisible}
-        onClose={() => setCardModalVisible(false)}
-        onSuccess={(res) => {
-          if (res.success) setCardInfo(res);
-        }}
-      />
-      <AuthProfileModal
-        visible={profileModalVisible}
-        onClose={() => setProfileModalVisible(false)}
-        onProfileUpdated={(prof) => setUserProfile(prof)}
-      />
-    </SafeAreaView>
+              {/* Sefer Saatleri & Gün Seçici */}
+              <View style={{ marginTop: 16 }}>
+                <Text style={styles.sectionHeaderTitle}>Sefer Saatleri</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayScroll}>
+                  {WEEKDAYS.map((d) => {
+                    const active = scheduleDay === d.id;
+                    return (
+                      <TouchableOpacity
+                        key={d.id}
+                        style={[styles.dayChip, active && styles.dayChipActive]}
+                        onPress={() => changeScheduleDayOrDirection(d.id, scheduleDirection)}
+                      >
+                        <Text style={[styles.dayChipText, active && styles.dayChipTextActive]}>{d.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {scheduleLoading ? (
+                  <ActivityIndicator size="small" color={Theme.colors.primary} style={{ marginVertical: 12 }} />
+                ) : currentSchedules.length > 0 ? (
+                  <View style={styles.timeGrid}>
+                    {currentSchedules.map((s, i) => (
+                      <View key={i} style={styles.timePill}>
+                        <Text style={styles.timePillText}>{s.time}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>Bu gün için sefer saati bulunamadı.</Text>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* ── BAĞLAM 3: ARAÇ MODU (VEHICLE, G2) ──────────────────────────── */}
+          {mode === 'vehicle' && selectedVehicle && (
+            <View style={styles.sheetSection}>
+              <VehicleCard
+                plate={selectedVehicle.plaka || selectedVehicle.plate || 'Belediye Otobüsü'}
+                routeCode={selectedVehicle.hatkodu || selectedVehicle.routeCode || '—'}
+                speed={selectedVehicle.hiz != null ? selectedVehicle.hiz : null}
+                direction={selectedVehicle.istikamet || null}
+                lastGpsTime={formatGpsAge(selectedVehicle.editDate, gpsTicker)}
+                nextStopName={vehicleFromStop ? vehicleFromStop.name : null}
+                nextStopEtaMinutes={(() => {
+                  if (!vehicleFromStop) return null;
+                  const plate = normalizePlate(selectedVehicle.plaka || selectedVehicle.plate);
+                  const routeCode = selectedVehicle.hatkodu || selectedVehicle.routeCode || '';
+                  const routeItem = allRoutes.find((r) => r.kod === routeCode);
+                  // Önce plaka eşleşmesi; yoksa aynı hattın en yakın seferi (API bazı satırlarda plaka vermez)
+                  const row =
+                    stationBuses.find((b) => plate && normalizePlate(b.busPlate) === plate) ||
+                    stationBuses
+                      .filter(
+                        (b) =>
+                          (routeItem && String(b.busLineNo) === String(routeItem.hatNo)) ||
+                          normalizeText(b.busLineCode) === normalizeText(routeCode)
+                      )
+                      .sort((a, b) => (a.remainingTimeCurr ?? 999) - (b.remainingTimeCurr ?? 999))[0];
+                  return row?.remainingTimeCurr ?? null;
+                })()}
+                isFollowed={followedPlate === (selectedVehicle.plaka || selectedVehicle.plate || selectedVehicle.key)}
+                onToggleFollow={handleToggleFollow}
+                onClose={() => {
+                  setVehicleFromStop(null);
+                  if (vehicleFromStop && selectedStation) {
+                    setMode('stop');
+                    mapRef.current?.panToLocation(selectedStation.lat!, selectedStation.lng!, 16);
+                  } else {
+                    setMode('city');
+                  }
+                }}
+              />
+            </View>
+          )}
+
+          {/* ── BAĞLAM 4: ŞEHİR GENELİ MODU (CITY, G6/G7) ──────────────────── */}
+          {mode === 'city' && (
+            <View style={styles.sheetSection}>
+              {/* G7: Yakınımdan Geçenler */}
+              {nearDepartures.length > 0 && (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={styles.sectionHeaderTitle}>Yakınımdan Geçenler (500m)</Text>
+                  <View style={{ gap: 8 }}>
+                    {nearDepartures.map(({ stop, departures }, i) => (
+                      <Card key={i} style={{ gap: 6 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: Theme.colors.textPrimary }}>
+                          🚏 {stop.name}
+                        </Text>
+                        {departures.map((d, di) => (
+                          <TouchableOpacity
+                            key={di}
+                            style={styles.nearDepRow}
+                            onPress={() => handleSelectStation(stop)}
+                          >
+                            <View style={styles.nearDepBadge}>
+                              <Text style={styles.nearDepBadgeText}>Hat {d.busLineNo || d.busLineCode}</Text>
+                            </View>
+                            <Text style={styles.nearDepDest} numberOfLines={1}>
+                              {d.busLineLongName || d.busLineCode}
+                            </Text>
+                            <Countdown seconds={(d.remainingTimeCurr || 0) * 60} compact />
+                          </TouchableOpacity>
+                        ))}
+                      </Card>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* G6: Hat Özet Izgarası */}
+              <Text style={styles.sectionHeaderTitle}>Tüm Hatlar & Aktif Otobüsler</Text>
+              <View style={styles.routesGrid}>
+                {sortedRouteChips.map((rt) => {
+                  const cnt = activeBusCountsByRoute[rt.kod] || 0;
+                  return (
+                    <TouchableOpacity
+                      key={rt.kod}
+                      style={styles.routeGridCard}
+                      onPress={() => handleSelectRoute(rt.kod, rt.aciklama)}
+                    >
+                      <View style={styles.routeGridBadge}>
+                        <Text style={styles.routeGridBadgeText}>Hat {rt.hatNo}</Text>
+                      </View>
+                      <Text style={styles.routeGridDesc} numberOfLines={1}>{rt.aciklama}</Text>
+                      {cnt > 0 ? (
+                        <View style={styles.routeGridCount}>
+                          <Text style={styles.routeGridCountText}>{cnt} araç</Text>
+                        </View>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* ── BAĞLAM 5: ARAMA MODU (SEARCH) ───────────────────────────────── */}
+          {mode === 'search' && (
+            <View style={styles.sheetSection}>
+              {/* Filtre Sekmeleri */}
+              <View style={styles.searchFilterTabs}>
+                {(['all', 'routes', 'stations'] as const).map((flt) => (
+                  <TouchableOpacity
+                    key={flt}
+                    style={[styles.searchFilterTab, searchFilter === flt && styles.searchFilterTabActive]}
+                    onPress={() => setSearchFilter(flt)}
+                  >
+                    <Text
+                      style={[
+                        styles.searchFilterTabText,
+                        searchFilter === flt && styles.searchFilterTabTextActive,
+                      ]}
+                    >
+                      {flt === 'all' ? 'Tümü' : flt === 'routes' ? 'Hatlar' : 'Duraklar'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Eşleşen Hatlar */}
+              {(searchFilter === 'all' || searchFilter === 'routes') && matchingRoutes.length > 0 && (
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={styles.sectionHeaderTitle}>Hatlar ({matchingRoutes.length})</Text>
+                  {matchingRoutes.map((rt) => (
+                    <TouchableOpacity
+                      key={rt.kod}
+                      style={styles.searchResultRow}
+                      onPress={() => handleSelectRoute(rt.kod, rt.aciklama)}
+                    >
+                      <View style={styles.routeGridBadge}>
+                        <Text style={styles.routeGridBadgeText}>Hat {rt.hatNo}</Text>
+                      </View>
+                      <Text style={styles.searchResultName} numberOfLines={1}>
+                        Hat {rt.hatNo} · {rt.aciklama}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={14} color={Theme.colors.textMuted} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Eşleşen Duraklar */}
+              {(searchFilter === 'all' || searchFilter === 'stations') && matchingStations.length > 0 && (
+                <View>
+                  <Text style={styles.sectionHeaderTitle}>Duraklar ({matchingStations.length})</Text>
+                  {matchingStations.map((st) => (
+                    <TouchableOpacity
+                      key={st.id}
+                      style={styles.searchResultRow}
+                      onPress={() => handleSelectStation(st)}
+                    >
+                      <MaterialCommunityIcons name="bus-stop" size={18} color={Theme.colors.primary} />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={styles.searchResultName}>{st.name}</Text>
+                        <Text style={styles.searchResultMeta}>Durak {st.code || st.id}</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={14} color={Theme.colors.textMuted} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </BottomSheet>
+    </View>
   );
 }
 
-const styles = themedStyles(() => StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Theme.colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 6,
-    backgroundColor: Theme.colors.background,
-    zIndex: 40,
-  },
-  headerSub: {
-    fontSize: 12,
-    color: Theme.colors.textMuted,
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: Theme.colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  cardChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: Theme.colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  liveChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: Theme.colors.success,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' },
-  liveChipText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  cardChipText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  avatarBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: Theme.colors.primary,
-    borderWidth: 0,
-    borderColor: Theme.colors.cardBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  avatarText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  mainCanvas: {
-    flex: 1,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  loadingBox: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 13,
-    color: Theme.colors.textMuted,
-  },
-  mapFull: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-  },
-  mapGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 80,
-    backgroundColor: 'transparent',
-    // soft fade simulated via overlay tint
-    opacity: 0.5,
-    zIndex: 1,
-  },
-  fabColumn: {
-    position: 'absolute',
-    right: 16,
-    bottom: 85,
-    zIndex: 60,
-    gap: 12,
-    alignItems: 'center',
-  },
-  fabSecondary: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: Theme.colors.surface,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Theme.shadows.md,
-  },
-  fabPrimary: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: Theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Theme.shadows.lg,
-  },
-  bottomSheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 40,
-    backgroundColor: Theme.colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 0,
-    borderColor: Theme.colors.cardBorder,
-    paddingBottom: 16,
-    maxHeight: SCREEN_HEIGHT * 0.46,
-    shadowColor: '#1a365d',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
-    elevation: 16,
-  },
-  dragHandleHit: {
-    alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 6,
-  },
-  dragHandle: {
-    width: 48,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Theme.colors.cardBorder,
-  },
-  sheetHeaderTouchable: {
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-  },
-  sheetHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sheetTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Theme.colors.textPrimary,
-    marginBottom: 2,
-  },
-  sheetMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  sheetMeta: {
-    fontSize: 13,
-    color: Theme.colors.textMuted,
-  },
-  codeBadge: {
-    backgroundColor: Theme.colors.secondaryBg,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  codeBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Theme.colors.secondary,
-  },
-  detailsBtn: {
-    backgroundColor: Theme.colors.surfaceSubtle,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-  },
-  detailsBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Theme.colors.primary,
-  },
-  sheetBodyScroll: {
-    flex: 1,
-  },
-  sheetBodyContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-  },
-  sheetLoading: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    gap: 8,
-  },
-  sheetLoadingText: {
-    fontSize: 12,
-    color: Theme.colors.textMuted,
-  },
-  arrivalsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 4,
-  },
-  arrivalCard: {
-    width: (SCREEN_WIDTH - 32 - 10) / 2,
-    backgroundColor: Theme.colors.surfaceSubtle,
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-  },
-  arrivalCardWide: {
-    width: '100%',
-    backgroundColor: Theme.colors.surfaceSubtle,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-  },
-  arrivalCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  hatBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  hatBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  arrivalMins: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: Theme.colors.accentDark,
-  },
-  arrivalDest: {
-    fontSize: 13,
-    color: Theme.colors.textPrimary,
-  },
-  arrivalNext: {
-    fontSize: 11,
-    color: Theme.colors.textMuted,
-    marginTop: 4,
-  },
-  noBusText: {
-    fontSize: 13,
-    color: Theme.colors.textMuted,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  serviceUpdate: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: Theme.colors.surfaceVariant,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-  },
-  serviceUpdateIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#66affe',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  serviceUpdateTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Theme.colors.primary,
-  },
-  serviceUpdateBody: {
-    fontSize: 12,
-    color: Theme.colors.textMuted,
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  nearbySectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Theme.colors.textMuted,
-    marginTop: 10,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  nearbyScroll: {
-    marginTop: 4,
-  },
-  nearbyScrollContent: {
-    gap: 8,
-    paddingRight: 8,
-  },
-  nearbyChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Theme.colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    maxWidth: 160,
-  },
-  nearbyChipActive: {
-    backgroundColor: Theme.colors.primary,
-    borderColor: Theme.colors.primary,
-  },
-  nearbyChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Theme.colors.primary,
-    maxWidth: 120,
-  },
-  nearbyChipTextActive: {
-    color: '#fff',
-  },
-  // Top Search Bar (Always visible)
-  topSearchBarContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 10,
-    backgroundColor: Theme.colors.background,
-    zIndex: 35,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  topSearchBar: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-    paddingHorizontal: 14,
-    height: 48,
-    gap: 10,
-    ...Theme.shadows.sm,
-  },
-  tripPlannerBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: '#059669',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Theme.shadows.sm,
-  },
-  topSearchPlaceholder: {
-    flex: 1,
-    fontSize: 13,
-    color: Theme.colors.textMuted,
-    fontWeight: '500',
-  },
-  topSearchAction: {
-    backgroundColor: Theme.colors.accent,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  topSearchActionText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#fff',
-  },
+const styles = themedStyles(() =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: Theme.colors.background,
+    },
+    mapContainer: {
+      ...StyleSheet.absoluteFillObject,
+    },
 
-  // Search Overlay (Full featured modal)
-  searchOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    maxHeight: SCREEN_HEIGHT * 0.72,
-    backgroundColor: Theme.colors.surface,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    borderBottomWidth: 2,
-    borderBottomColor: Theme.colors.cardBorder,
-    overflow: 'hidden',
-    ...Theme.shadows.lg,
-  },
-  searchHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 8,
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceSubtle,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-    paddingHorizontal: 12,
-    height: 46,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: Theme.colors.textPrimary,
-  },
-  searchCloseBtn: {
-    padding: 6,
-  },
+    // Yüzen Üst Arama & Çipler
+    topFloatingArea: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 20,
+      paddingHorizontal: 14,
+      paddingTop: 8,
+      gap: 8,
+    },
+    topSearchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    linesIconBtn: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      backgroundColor: Theme.colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: Theme.colors.cardBorder,
+      ...Theme.shadows.md,
+    },
+    searchBarTouch: {
+      flex: 1,
+      height: 44,
+      borderRadius: 14,
+      backgroundColor: Theme.colors.surface,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      gap: 8,
+      borderWidth: 1,
+      borderColor: Theme.colors.cardBorder,
+      ...Theme.shadows.md,
+    },
+    searchBarText: {
+      fontSize: 13,
+      color: Theme.colors.textMuted,
+      flex: 1,
+    },
+    tripPlannerBtn: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      backgroundColor: Theme.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...Theme.shadows.md,
+    },
 
-  // Filter Tabs
-  filterTabsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.cardBorder,
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: Theme.colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-  },
-  filterChipActive: {
-    backgroundColor: Theme.colors.primary,
-    borderColor: Theme.colors.primary,
-  },
-  filterChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Theme.colors.textPrimary,
-  },
-  filterChipTextActive: {
-    color: '#fff',
-  },
+    // Hat çipleri strip
+    routeChipsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    routeChipsScroll: {
+      gap: 6,
+      paddingRight: 6,
+    },
+    liveBadgeFloating: {
+      ...Theme.shadows.sm,
+    },
 
-  // Search Results
-  searchResults: {
-    maxHeight: SCREEN_HEIGHT * 0.55,
-  },
-  searchResultsContent: {
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 24,
-  },
+    // Sağ alt FAB sütunu
+    fabColumn: {
+      position: 'absolute',
+      right: 14,
+      zIndex: 25,
+      gap: 10,
+    },
+    fabBtn: {
+      width: 46,
+      height: 46,
+      borderRadius: 16,
+      backgroundColor: Theme.colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: Theme.colors.cardBorder,
+      ...Theme.shadows.lg,
+    },
+    fabBtnPrimary: {
+      backgroundColor: Theme.colors.primary,
+      borderColor: Theme.colors.primary,
+    },
 
-  // Direct Action Card
-  directActionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: Theme.colors.secondaryBg,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Theme.colors.secondary,
-    padding: 12,
-    marginVertical: 6,
-  },
-  directActionIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: Theme.colors.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  directActionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Theme.colors.primary,
-  },
-  directActionSub: {
-    fontSize: 11,
-    color: Theme.colors.textMuted,
-    marginTop: 2,
-  },
+    // Bottom Sheet İçerik Stilleri
+    sheetHeaderContainer: {
+      paddingHorizontal: 16,
+      paddingBottom: 8,
+    },
+    sheetHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    sheetTitle: {
+      fontSize: 17,
+      fontWeight: '800',
+      color: Theme.colors.textPrimary,
+    },
+    sheetSubtitle: {
+      fontSize: 12,
+      color: Theme.colors.textMuted,
+      marginTop: 2,
+    },
+    headerActionBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: Theme.colors.surfaceVariant,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    directionToggleBtn: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: Theme.colors.surfaceVariant,
+    },
+    directionToggleActive: {
+      backgroundColor: Theme.colors.primary,
+    },
+    directionToggleText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: Theme.colors.textMuted,
+    },
+    directionToggleTextActive: {
+      color: '#fff',
+    },
 
-  // Quick Lines Section
-  quickSection: {
-    marginVertical: 8,
-  },
-  quickSectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Theme.colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  quickChipsScroll: {
-    gap: 8,
-    paddingBottom: 4,
-  },
-  quickLineChip: {
-    backgroundColor: Theme.colors.surfaceSubtle,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-  },
-  quickLineChipText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Theme.colors.primary,
-  },
+    searchInputWrap: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: Theme.colors.surfaceVariant,
+      borderRadius: 12,
+      paddingHorizontal: 10,
+      height: 40,
+      gap: 6,
+      marginRight: 8,
+    },
+    searchInputField: {
+      flex: 1,
+      fontSize: 14,
+      color: Theme.colors.textPrimary,
+    },
 
-  // Search Sections (Hatlar / Duraklar)
-  searchSection: {
-    marginTop: 8,
-  },
-  searchSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.cardBorder,
-    marginBottom: 4,
-  },
-  searchSectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Theme.colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  routeResultItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.surfaceSubtle,
-  },
-  routeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-    minWidth: 54,
-    alignItems: 'center',
-  },
-  routeBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#fff',
-  },
-  routeResultName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Theme.colors.primary,
-  },
-  routeResultDesc: {
-    fontSize: 11,
-    color: Theme.colors.textMuted,
-    marginTop: 2,
-  },
-  searchResultItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.surfaceSubtle,
-  },
-  stationIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: Theme.colors.surfaceSubtle,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchResultName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Theme.colors.primary,
-  },
-  searchResultMeta: {
-    fontSize: 11,
-    color: Theme.colors.textMuted,
-    marginTop: 2,
-  },
-  noResultsBox: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    gap: 8,
-  },
-  noResultsTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Theme.colors.primary,
-  },
-  noResultsSub: {
-    fontSize: 12,
-    color: Theme.colors.textMuted,
-    textAlign: 'center',
-  },
+    sheetContentScroll: {
+      flex: 1,
+    },
+    sheetContentInner: {
+      paddingHorizontal: 16,
+      paddingBottom: 40,
+    },
+    sheetSection: {
+      gap: 10,
+    },
+    sectionHeaderTitle: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: Theme.colors.textPrimary,
+      marginBottom: 4,
+    },
 
-  // Routes Panel (Layers)
-  routesPanel: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    right: 72,
-    bottom: 280,
-    zIndex: 35,
-    backgroundColor: Theme.colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-    padding: 14,
-    ...Theme.shadows.lg,
-  },
-  routesPanelHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  routesPanelTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Theme.colors.primary,
-  },
-  routeTabs: {
-    flexGrow: 0,
-    marginBottom: 10,
-  },
-  routeTab: {
-    backgroundColor: Theme.colors.surfaceSubtle,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-  },
-  routeTabActive: {
-    backgroundColor: Theme.colors.primary,
-    borderColor: Theme.colors.primary,
-  },
-  routeTabText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Theme.colors.textPrimary,
-  },
-  routeTabTextActive: {
-    color: '#fff',
-  },
-  routeDetailScroll: {
-    flex: 1,
-  },
-  routeName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Theme.colors.primary,
-    marginBottom: 4,
-  },
-  routePrice: {
-    fontSize: 12,
-    color: Theme.colors.secondary,
-    marginBottom: 4,
-  },
-  routeStopsCount: {
-    fontSize: 12,
-    color: Theme.colors.textMuted,
-    marginBottom: 10,
-  },
-  routeStopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.surfaceSubtle,
-  },
-  routeStopDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Theme.colors.cardBorder,
-  },
-  routeStopDotFirst: {
-    backgroundColor: Theme.colors.primary,
-  },
-  routeStopName: {
-    fontSize: 13,
-    color: Theme.colors.textPrimary,
-    flex: 1,
-  },
-  departuresTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Theme.colors.primary,
-  },
-  scheduleSection: {
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: Theme.colors.cardBorder,
-  },
-  scheduleHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  directionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceSubtle,
-    borderRadius: 8,
-    padding: 2,
-    gap: 2,
-  },
-  directionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  directionChipActive: {
-    backgroundColor: Theme.colors.primary,
-  },
-  directionChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Theme.colors.textMuted,
-  },
-  directionChipTextActive: {
-    color: '#ffffff',
-  },
-  dayScroll: {
-    marginBottom: 10,
-  },
-  dayScrollContent: {
-    gap: 6,
-    paddingVertical: 2,
-  },
-  dayChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: Theme.colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 42,
-    position: 'relative',
-  },
-  dayChipActive: {
-    backgroundColor: Theme.colors.primary,
-    borderColor: Theme.colors.primary,
-  },
-  dayChipToday: {
-    borderColor: Theme.colors.secondary,
-  },
-  dayChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Theme.colors.textPrimary,
-  },
-  dayChipTextActive: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-  dayChipTextToday: {
-    color: Theme.colors.secondary,
-    fontWeight: '700',
-  },
-  todayDot: {
-    position: 'absolute',
-    bottom: 2,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Theme.colors.secondary,
-  },
-  scheduleLoadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 12,
-  },
-  scheduleLoadingText: {
-    fontSize: 12,
-    color: Theme.colors.textMuted,
-  },
-  timeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  timePill: {
-    backgroundColor: Theme.colors.surfaceSubtle,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-  },
-  timePillPast: {
-    opacity: 0.45,
-    backgroundColor: Theme.colors.surfaceSubtle,
-  },
-  timePillNext: {
-    backgroundColor: Theme.colors.primary,
-    borderColor: Theme.colors.primary,
-    shadowColor: Theme.colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  timePillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Theme.colors.primary,
-  },
-  timePillTextPast: {
-    color: '#94a3b8',
-  },
-  timePillTextNext: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-  nextBadge: {
-    backgroundColor: '#f59e0b',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
-    marginLeft: 5,
-  },
-  nextBadgeText: {
-    color: '#ffffff',
-    fontSize: 8,
-    fontWeight: '800',
-  },
-  emptyScheduleText: {
-    fontSize: 12,
-    color: Theme.colors.textMuted,
-    fontStyle: 'italic',
-    paddingVertical: 8,
-  },
-  starBtn: {
-    padding: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  routeHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  transitStaleBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: Theme.colors.secondaryBg,
-    borderBottomWidth: 1,
-    borderBottomColor: '#bae6fd',
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    zIndex: 10,
-  },
-  transitStaleText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#0369a1',
-  },
-  delayStatsSection: {
-    marginTop: 14,
-    backgroundColor: Theme.colors.surfaceSubtle,
-    borderRadius: Theme.radius.lg,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Theme.colors.cardBorder,
-    gap: 10,
-  },
-  delayStatsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  delayStatsTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: Theme.colors.textPrimary,
-  },
-  delayStatusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  delayStatusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  delayStatusText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  delayMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  delayMetaText: {
-    fontSize: 12,
-    color: Theme.colors.textSecondary,
-  },
-  chartScroll: {
-    marginVertical: 4,
-  },
-  chartContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: 80,
-    gap: 8,
-    paddingHorizontal: 4,
-  },
-  chartBarCol: {
-    alignItems: 'center',
-    width: 24,
-    height: '100%',
-    justifyContent: 'flex-end',
-    gap: 2,
-  },
-  chartBarVal: {
-    fontSize: 8,
-    color: Theme.colors.textMuted,
-    fontWeight: '700',
-  },
-  chartBarBg: {
-    width: 12,
-    height: 50,
-    backgroundColor: Theme.colors.cardBorder,
-    borderRadius: 6,
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
-  },
-  chartBarFill: {
-    width: '100%',
-    borderRadius: 6,
-  },
-  chartBarHour: {
-    fontSize: 9,
-    color: Theme.colors.textMuted,
-    fontWeight: '600',
-  },
-  chartBarHourCurrent: {
-    color: '#0284c7',
-    fontWeight: '900',
-  },
-  chartLegend: {
-    fontSize: 10,
-    color: Theme.colors.textMuted,
-    textAlign: 'center',
-  },
-}));
+    // Durak modu stilleri
+    loadingBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 16,
+    },
+    loadingText: {
+      fontSize: 12,
+      color: Theme.colors.textMuted,
+    },
+    emptyCard: {
+      padding: 16,
+    },
+    arrivalCard: {
+      padding: 12,
+      gap: 8,
+    },
+    arrivalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    arrivalBadge: {
+      backgroundColor: Theme.colors.primary,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+    },
+    arrivalBadgeText: {
+      color: '#fff',
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    arrivalDest: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: Theme.colors.textPrimary,
+    },
+    arrivalMeta: {
+      fontSize: 11,
+      color: Theme.colors.textMuted,
+      marginTop: 2,
+    },
+    arrivalFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderTopWidth: 1,
+      borderTopColor: Theme.colors.cardBorder,
+      paddingTop: 8,
+      marginTop: 2,
+    },
+    notifyBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    notifyBtnText: {
+      fontSize: 11,
+      color: Theme.colors.textMuted,
+      fontWeight: '600',
+    },
+
+    linesWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+    },
+    passingLineChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: Theme.colors.surfaceVariant,
+    },
+    passingLineChipText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: Theme.colors.textPrimary,
+    },
+
+    // Hat modu stilleri (G4, G3)
+    bestBoardingCard: {
+      padding: 12,
+      backgroundColor: Theme.colors.liveBg,
+      borderColor: Theme.colors.live,
+      borderWidth: 1,
+    },
+    bestBoardingUrgent: {
+      backgroundColor: Theme.colors.warningBg,
+      borderColor: Theme.colors.warning,
+    },
+    bestBoardingTitle: {
+      fontSize: 13,
+      fontWeight: '800',
+      color: Theme.colors.textPrimary,
+    },
+    bestBoardingText: {
+      fontSize: 12,
+      color: Theme.colors.textSecondary,
+      marginTop: 2,
+      lineHeight: 17,
+    },
+
+    stopListContainer: {
+      backgroundColor: Theme.colors.surface,
+      borderRadius: Theme.radius.lg,
+      borderWidth: 1,
+      borderColor: Theme.colors.cardBorder,
+      overflow: 'hidden',
+    },
+    stopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: Theme.colors.cardBorder,
+    },
+    stopDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: Theme.colors.textFaint,
+      marginRight: 10,
+    },
+    stopDotStart: {
+      backgroundColor: Theme.colors.primary,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    stopNameText: {
+      flex: 1,
+      fontSize: 13,
+      fontWeight: '600',
+      color: Theme.colors.textPrimary,
+    },
+
+    busHereRibbon: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: Theme.colors.liveBg,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderLeftWidth: 3,
+      borderLeftColor: Theme.colors.live,
+    },
+    busHereDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: Theme.colors.live,
+    },
+    busHereText: {
+      flex: 1,
+      fontSize: 11,
+      fontWeight: '700',
+      color: Theme.colors.live,
+    },
+
+    dayScroll: {
+      gap: 6,
+      paddingBottom: 8,
+    },
+    dayChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: Theme.colors.surfaceVariant,
+    },
+    dayChipActive: {
+      backgroundColor: Theme.colors.primary,
+    },
+    dayChipText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: Theme.colors.textMuted,
+    },
+    dayChipTextActive: {
+      color: '#fff',
+    },
+
+    timeGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginTop: 6,
+    },
+    timePill: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: Theme.colors.surfaceVariant,
+    },
+    timePillText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: Theme.colors.textPrimary,
+      fontVariant: ['tabular-nums'],
+    },
+    emptyText: {
+      fontSize: 12,
+      color: Theme.colors.textMuted,
+      marginVertical: 8,
+    },
+
+    // Şehir geneli mod stilleri (G7, G6)
+    nearDepRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 4,
+    },
+    nearDepBadge: {
+      backgroundColor: Theme.colors.primary,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+    },
+    nearDepBadgeText: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: '#fff',
+    },
+    nearDepDest: {
+      flex: 1,
+      fontSize: 12,
+      color: Theme.colors.textSecondary,
+    },
+
+    routesGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    routeGridCard: {
+      width: '48%',
+      flexGrow: 1,
+      backgroundColor: Theme.colors.surface,
+      borderRadius: Theme.radius.md,
+      borderWidth: 1,
+      borderColor: Theme.colors.cardBorder,
+      padding: 10,
+      gap: 4,
+    },
+    routeGridBadge: {
+      backgroundColor: Theme.colors.primary,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+      alignSelf: 'flex-start',
+    },
+    routeGridBadgeText: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: '#fff',
+    },
+    routeGridDesc: {
+      fontSize: 11,
+      color: Theme.colors.textMuted,
+    },
+    routeGridCount: {
+      backgroundColor: Theme.colors.liveBg,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+      alignSelf: 'flex-start',
+      marginTop: 2,
+    },
+    routeGridCountText: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: Theme.colors.live,
+    },
+
+    // Arama filtre sekmesi stilleri
+    searchFilterTabs: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 8,
+    },
+    searchFilterTab: {
+      flex: 1,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: Theme.colors.surfaceVariant,
+      alignItems: 'center',
+    },
+    searchFilterTabActive: {
+      backgroundColor: Theme.colors.primary,
+    },
+    searchFilterTabText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: Theme.colors.textMuted,
+    },
+    searchFilterTabTextActive: {
+      color: '#fff',
+    },
+
+    searchResultRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: Theme.colors.cardBorder,
+      gap: 8,
+    },
+    searchResultName: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: Theme.colors.textPrimary,
+      flex: 1,
+    },
+    searchResultMeta: {
+      fontSize: 11,
+      color: Theme.colors.textMuted,
+    },
+  })
+);

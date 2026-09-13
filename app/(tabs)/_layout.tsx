@@ -1,20 +1,15 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { View, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { View, StyleSheet, Text } from 'react-native';
+import { Home, Bus, GraduationCap, Compass } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme, themedStyles, useAppTheme } from '../../constants/Theme';
-
-const C = Theme.colors;
-
-function TabIcon({ focused, color, children }: { focused: boolean; color: string; children: React.ReactNode }) {
-  return <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>{children}</View>;
-}
 
 export default function TabLayout() {
   useAppTheme();
   const insets = useSafeAreaInsets();
   const bottom = insets.bottom > 0 ? insets.bottom : 10;
+  const C = Theme.colors;
 
   return (
     <Tabs
@@ -25,13 +20,13 @@ export default function TabLayout() {
         tabBarInactiveTintColor: C.textMuted,
         tabBarStyle: {
           backgroundColor: C.surface,
-          borderTopWidth: 0,
-          height: 62 + bottom,
+          borderTopWidth: 1,
+          borderTopColor: C.cardBorder,
+          height: 58 + bottom,
           paddingBottom: bottom,
-          paddingTop: 8,
+          paddingTop: 6,
           ...Theme.shadows.lg,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
         tabBarItemStyle: { paddingVertical: 2 },
       }}
     >
@@ -39,22 +34,19 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Ana Sayfa',
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon focused={focused} color={color}>
-              <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
-            </TabIcon>
-          ),
+          tabBarLabel: ({ focused, color }) =>
+            focused ? <Text style={[styles.tabLabel, { color }]}>Ana Sayfa</Text> : null,
+          tabBarIcon: ({ color }) => <Home size={22} color={color} strokeWidth={2} />,
         }}
       />
       <Tabs.Screen
         name="transit"
         options={{
           title: 'Ulaşım',
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon focused={focused} color={color}>
-              <MaterialCommunityIcons name={focused ? 'bus' : 'bus-side'} size={23} color={color} />
-            </TabIcon>
-          ),
+          tabBarActiveTintColor: Theme.colors.live,
+          tabBarLabel: ({ focused, color }) =>
+            focused ? <Text style={[styles.tabLabel, { color }]}>Ulaşım</Text> : null,
+          tabBarIcon: ({ color }) => <Bus size={22} color={color} strokeWidth={2} />,
         }}
       />
       <Tabs.Screen
@@ -62,40 +54,38 @@ export default function TabLayout() {
         options={{
           title: 'Üniversite',
           tabBarActiveTintColor: C.uniRed,
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon focused={focused} color={color}>
-              <Ionicons name={focused ? 'school' : 'school-outline'} size={22} color={color} />
-            </TabIcon>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="news"
-        options={{
-          title: 'Keşfet',
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon focused={focused} color={color}>
-              <Ionicons name={focused ? 'compass' : 'compass-outline'} size={22} color={color} />
-            </TabIcon>
-          ),
+          tabBarLabel: ({ focused, color }) =>
+            focused ? <Text style={[styles.tabLabel, { color }]}>Üniversite</Text> : null,
+          tabBarIcon: ({ color }) => <GraduationCap size={22} color={color} strokeWidth={2} />,
         }}
       />
       <Tabs.Screen
         name="services"
         options={{
-          title: 'Hizmetler',
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon focused={focused} color={color}>
-              <MaterialCommunityIcons name={focused ? 'view-grid' : 'view-grid-outline'} size={22} color={color} />
-            </TabIcon>
-          ),
+          title: 'Şehir',
+          tabBarActiveTintColor: C.primary,
+          tabBarLabel: ({ focused, color }) =>
+            focused ? <Text style={[styles.tabLabel, { color }]}>Şehir</Text> : null,
+          tabBarIcon: ({ color }) => <Compass size={22} color={color} strokeWidth={2} />,
+        }}
+      />
+      <Tabs.Screen
+        name="news"
+        options={{
+          href: null,
         }}
       />
     </Tabs>
   );
 }
 
-const styles = themedStyles(() => StyleSheet.create({
-  iconWrap: { width: 46, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  iconWrapActive: { backgroundColor: C.surfaceVariant },
-}));
+const styles = themedStyles(() =>
+  StyleSheet.create({
+    tabLabel: {
+      fontSize: 11,
+      fontWeight: '700',
+      marginTop: 2,
+    },
+  })
+);
+

@@ -34,10 +34,25 @@ import {
   ObsMessagesResult,
   ObsMessage,
   ObsMessageDetail,
+  ObsGraduationAnalysis,
+  calculateGraduationTarget,
   diffGrades,
 } from '../services/obsService';
 import { PrefsService, GradeChange } from '../services/prefsService';
-import { Card, Chip, Pill, StatTile, EmptyState, LoadingState, PrimaryButton, Notice, ScreenHeader, IconCircle } from '../components/ui';
+import {
+  Card,
+  Chip,
+  Pill,
+  StatTile,
+  EmptyState,
+  LoadingState,
+  PrimaryButton,
+  Notice,
+  ScreenHeader,
+  IconCircle,
+  ProgressRing,
+  CriterionCard,
+} from '../components/ui';
 
 const C = Theme.colors;
 const RED = C.uniRed;
@@ -53,21 +68,28 @@ type TabKey =
   | 'mesajlar'
   | 'devamsizlik'
   | 'gecmis'
-  | 'danisman';
+  | 'danisman'
+  | 'mezuniyet';
 
-const TABS: { key: TabKey; label: string; icon: string }[] = [
+const ACADEMIC_TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'notlar', label: 'Notlar', icon: 'clipboard-text-outline' },
-  { key: 'program', label: 'Ders Programı', icon: 'calendar-clock' },
   { key: 'dersler', label: 'Dersler', icon: 'book-open-variant' },
+  { key: 'program', label: 'Ders Programı', icon: 'calendar-clock' },
   { key: 'sinavlar', label: 'Sınavlar', icon: 'calendar-star' },
-  { key: 'harc', label: 'Harç Bilgileri', icon: 'cash-multiple' },
-  { key: 'takvim', label: 'Akademik Takvim', icon: 'calendar-text' },
-  { key: 'mufredat', label: 'Müfredat', icon: 'chart-donut' },
-  { key: 'mesajlar', label: 'Gelen Mesajlar', icon: 'email-outline' },
   { key: 'devamsizlik', label: 'Devamsızlık', icon: 'account-clock-outline' },
   { key: 'gecmis', label: 'Ders Geçmişi', icon: 'history' },
+  { key: 'mezuniyet', label: 'Mezuniyet', icon: 'school-outline' },
+  { key: 'mufredat', label: 'Müfredat', icon: 'chart-donut' },
+];
+
+const ADMIN_TABS: { key: TabKey; label: string; icon: string }[] = [
+  { key: 'harc', label: 'Harç Bilgileri', icon: 'cash-multiple' },
+  { key: 'takvim', label: 'Akademik Takvim', icon: 'calendar-text' },
+  { key: 'mesajlar', label: 'Gelen Mesajlar', icon: 'email-outline' },
   { key: 'danisman', label: 'Danışman', icon: 'account-tie-outline' },
 ];
+
+const TABS: { key: TabKey; label: string; icon: string }[] = [...ACADEMIC_TABS, ...ADMIN_TABS];
 
 function gradeTone(letter: string): { fg: string; bg: string } {
   if (/^(AA|BA)$/.test(letter)) return { fg: C.success, bg: C.successBg };
@@ -108,6 +130,8 @@ export default function ObsScreen() {
   const [calendar, setCalendar] = useState<ObsAcademicCalendarResult | null>(null);
   const [curriculum, setCurriculum] = useState<ObsCurriculumResult | null>(null);
   const [messages, setMessages] = useState<ObsMessagesResult | null>(null);
+  const [graduation, setGraduation] = useState<ObsGraduationAnalysis | null>(null);
+  const [gradSegment, setGradSegment] = useState<'uncompleted' | 'failed'>('uncompleted');
   const [unseenGrades, setUnseenGrades] = useState<GradeChange[]>([]);
   const [tabBusy, setTabBusy] = useState(false);
   const [tabError, setTabError] = useState('');
@@ -260,6 +284,11 @@ export default function ObsScreen() {
         else if (key === 'harc') setTuition(await ObsService.getTuition(semester));
         else if (key === 'takvim') setCalendar(await ObsService.getAcademicCalendar());
         else if (key === 'mufredat') setCurriculum(await ObsService.getCurriculum());
+        else if (key === 'mezuniyet') {
+          const res = await ObsService.getGraduationAnalysis(force);
+          setGraduation(res);
+          if (res) PrefsService.setGraduationSnapshot(res).catch(() => {});
+        }
         else if (key === 'mesajlar') setMessages(await ObsService.getMessages());
         else if (key === 'gecmis') {
           setHistory(await ObsService.getCourseHistory((d, t) => setHistoryProgress(`${d}/${t} dönem`)));
@@ -271,7 +300,7 @@ export default function ObsScreen() {
         setTabBusy(false);
       }
     },
-    [grades, timetable, courses, attendance, exams, tuition, calendar, curriculum, messages, history]
+    [grades, timetable, courses, attendance, exams, tuition, calendar, curriculum, messages, history, graduation]
   );
 
   useEffect(() => {
@@ -873,6 +902,210 @@ export default function ObsScreen() {
     );
   };
 
+  const renderGraduation = () => {
+    if (!graduation) return null;
+
+    const aktsCrit = graduation.criteria.find((c) => /akts/i.test(c.title));
+    const completedAkts = aktsCrit ? parseInt(aktsCrit.value, 10) : 0;
+    const targetAkts = aktsCrit && aktsCrit.target ? parseInt(aktsCrit.target, 10) : 240;
+    const aktsProgress = targetAkts > 0 ? completedAkts / targetAkts : 0;
+
+    const isExceededPeriod = graduation.periodsStudied > graduation.maxDuration;
+    const projection = calculateGraduationTarget(
+      graduation.agno,
+      completedAkts,
+      targetAkts,
+      2.0,
+      graduation.failedCount
+    );
+
+    return (
+      <View style={{ gap: 14 }}>
+        {/* Üst Tamamlanma Halkası & Süre */}
+        <Card style={styles.gradSummaryCard}>
+          <View style={styles.gradSummaryRow}>
+            <ProgressRing
+              progress={aktsProgress}
+              size={104}
+              strokeWidth={9}
+              color={RED}
+              centerLabel={`%${Math.round(aktsProgress * 100)}`}
+              centerSub="AKTS"
+            />
+            <View style={{ flex: 1, gap: 6, marginLeft: 12 }}>
+              <Text style={styles.gradSummaryTitle}>AKTS İlerlemesi</Text>
+              <Text style={styles.gradSummaryValues}>
+                {completedAkts} <Text style={{ color: C.textMuted, fontSize: 13 }}>/ {targetAkts} AKTS</Text>
+              </Text>
+              {graduation.probableGraduationDate ? (
+                <Text style={styles.gradDateText}>
+                  🎓 Muhtemel: <Text style={{ fontWeight: '700' }}>{graduation.probableGraduationDate}</Text>
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          {/* Dönem / Süre Çubuğu */}
+          <View style={styles.gradDurationWrap}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.gradDurationLabel}>
+                Okuduğu Dönem: {graduation.periodsStudied} / {graduation.normalDuration} (Azami: {graduation.maxDuration})
+              </Text>
+              <Text style={[styles.gradDurationPct, isExceededPeriod && { color: C.danger }]}>
+                %{graduation.durationProgressPct}
+              </Text>
+            </View>
+            <View style={styles.barTrack}>
+              <View
+                style={[
+                  styles.barFill,
+                  {
+                    width: `${Math.min(100, graduation.durationProgressPct)}%`,
+                    backgroundColor: isExceededPeriod ? C.danger : RED,
+                  },
+                ]}
+              />
+            </View>
+            {isExceededPeriod ? (
+              <Notice
+                tone="warning"
+                text="Azami öğrenim süresi aşılmış durumda."
+                icon="alert-circle"
+              />
+            ) : null}
+          </View>
+        </Card>
+
+        {/* Sayfa Uyarısı (varsa info notu) */}
+        {graduation.chartWarning ? (
+          <Notice tone="info" text={graduation.chartWarning} icon="information-circle-outline" />
+        ) : null}
+
+        {/* 2x3 Kriter Kartları */}
+        <View style={styles.criteriaGrid}>
+          {graduation.criteria.map((crit, idx) => (
+            <CriterionCard
+              key={crit.key || idx}
+              title={crit.title}
+              value={crit.value}
+              target={crit.target}
+              percent={crit.percent}
+              status={crit.status}
+              warning={crit.warning}
+              style={{ width: '48%' }}
+            />
+          ))}
+        </View>
+
+        {/* O2 Mezuniyet Hedef Hesaplayıcı */}
+        {projection ? (
+          <Card style={{ gap: 8, backgroundColor: C.surfaceVariant }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="calculator-outline" size={18} color={RED} />
+              <Text style={styles.itemTitle}>Mezuniyet Hedef Analizi</Text>
+              <Pill label="Tahmin" color={C.textMuted} bg={C.surface} />
+            </View>
+            <Text style={styles.itemSub}>{projection.message}</Text>
+            <Text style={[styles.footNote, { color: C.textPrimary }]}>
+              ⏱️ Kalan {graduation.uncompletedCount} alınmayan ve {graduation.failedCount} başarısız ders ile tahmini {projection.estimatedTermsRemaining} dönemde mezuniyet hedeflenebilir.
+            </Text>
+          </Card>
+        ) : null}
+
+        {/* Eksik Dersler Bölümü: Alınmayan & Başarısız */}
+        <View style={{ gap: 10 }}>
+          <View style={styles.segmentRow}>
+            <TouchableOpacity
+              style={[styles.segmentBtn, gradSegment === 'uncompleted' && styles.segmentBtnActive]}
+              onPress={() => setGradSegment('uncompleted')}
+            >
+              <Text style={[styles.segmentBtnText, gradSegment === 'uncompleted' && styles.segmentBtnTextActive]}>
+                Alınmayan ({graduation.uncompletedCount})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segmentBtn, gradSegment === 'failed' && styles.segmentBtnActive]}
+              onPress={() => setGradSegment('failed')}
+            >
+              <Text style={[styles.segmentBtnText, gradSegment === 'failed' && styles.segmentBtnTextActive]}>
+                Başarısız ({graduation.failedCount})
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {gradSegment === 'uncompleted' ? (
+            graduation.uncompletedCourses.length === 0 ? (
+              <EmptyState icon="checkbox-marked-circle-outline" title="Alınmayan ders yok" description="Müfredattaki tüm zorunlu ve seçmeli dersler alınmış." tint={C.success} />
+            ) : (
+              graduation.uncompletedCourses.map((c, i) => (
+                <Card key={`unc-${i}`} style={{ gap: 4 }}>
+                  {c.isGroupHeader ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <IconCircle name="folder-open-outline" size={32} color={RED} bg={C.uniRedSoft} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.itemTitle, { color: RED }]}>{c.name}</Text>
+                        <Text style={styles.itemSub}>{c.groupDesc}</Text>
+                      </View>
+                      <Pill label={`${c.akts} AKTS`} color={RED} bg={C.uniRedSoft} />
+                    </View>
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.codeBadge}>{c.code}</Text>
+                          <Pill label={c.type} color={c.type === 'Zorunlu' ? RED : C.primary} bg={C.surfaceVariant} />
+                        </View>
+                        <Text style={[styles.itemTitle, { marginTop: 4 }]}>{c.name}</Text>
+                        {c.groupDesc ? <Text style={styles.itemSub}>{c.groupDesc}</Text> : null}
+                      </View>
+                      <Pill label={`${c.akts} AKTS`} color={C.textMuted} bg={C.surfaceVariant} />
+                    </View>
+                  )}
+                </Card>
+              ))
+            )
+          ) : (
+            graduation.failedCourses.length === 0 ? (
+              <EmptyState icon="school-outline" title="Başarısız ders bulunmuyor" description="Tüm dersler başarıyla verilmiş veya henüz not girilmemiş." tint={C.success} />
+            ) : (
+              graduation.failedCourses.map((c, i) => (
+                <Card key={`fail-${i}`} style={{ gap: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={styles.codeBadge}>{c.code}</Text>
+                    <Text style={styles.footNoteDate}>{c.term}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                    <Text style={[styles.itemTitle, { flex: 1 }]}>{c.name}</Text>
+                    <View style={[styles.gradeBadgeFail, { backgroundColor: C.dangerBg }]}>
+                      <Text style={[styles.gradeBadgeTextFail, { color: C.danger }]}>{c.grade}</Text>
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <Pill label={`${c.akts} AKTS`} color={C.textMuted} bg={C.surfaceVariant} />
+                    <Pill label={c.type === 'Z' ? 'Zorunlu' : 'Seçmeli'} color={C.textMuted} bg={C.surfaceVariant} />
+                  </View>
+                </Card>
+              ))
+            )
+          )}
+        </View>
+
+        {/* Mezuniyet Onay Durumu */}
+        <Card style={{ gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons
+              name={graduation.approvalStatus === 'active' ? 'checkmark-circle' : 'time-outline'}
+              size={18}
+              color={graduation.approvalStatus === 'active' ? C.success : C.textMuted}
+            />
+            <Text style={styles.itemTitle}>Mezuniyet Onay Süreci</Text>
+          </View>
+          <Text style={styles.itemSub}>{graduation.approvalMessage}</Text>
+        </Card>
+      </View>
+    );
+  };
+
   const tabContent = useMemo(() => {
     if (tabError) return <Notice tone="danger" text={tabError} onPress={() => loadTab(tab, undefined, true)} />;
     if (tabBusy) return <LoadingState label={tab === 'gecmis' && historyProgress ? `Ders geçmişi alınıyor (${historyProgress})` : 'OBS\'den alınıyor...'} tint={RED} />;
@@ -893,6 +1126,8 @@ export default function ObsScreen() {
         return renderAcademicCalendar();
       case 'mufredat':
         return renderCurriculum();
+      case 'mezuniyet':
+        return renderGraduation();
       case 'mesajlar':
         return renderMessages();
       case 'gecmis':
@@ -901,7 +1136,7 @@ export default function ObsScreen() {
         return renderAdvisor();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, tabBusy, tabError, grades, timetable, courses, attendance, exams, tuition, calendar, curriculum, messages, history, expanded, dashboard, historyProgress, unseenGrades]);
+  }, [tab, tabBusy, tabError, grades, timetable, courses, attendance, exams, tuition, calendar, curriculum, messages, history, graduation, gradSegment, expanded, dashboard, historyProgress, unseenGrades]);
 
   // ── Login ekranı ──────────────────────────────────────────────────────────
   const renderLogin = () => (
@@ -963,7 +1198,7 @@ export default function ObsScreen() {
   const a = dashboard?.academic;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle={Theme.colors.statusBar} backgroundColor={RED} />
       <View style={styles.topBar}>
         <ScreenHeader title="OBS" subtitle="Fırat Üniversitesi Öğrenci Bilgi Sistemi" light onBack={() => router.back()}
@@ -1023,30 +1258,58 @@ export default function ObsScreen() {
             ) : null}
           </Card>
 
-          {/* Sekmeler */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-            {TABS.map((t) => {
-              let badge: string | undefined;
-              if (t.key === 'notlar' && unseenGrades.length > 0) {
-                badge = `${unseenGrades.length}`;
-              } else if (t.key === 'mesajlar' && messages && messages.unreadCount > 0) {
-                badge = `${messages.unreadCount}`;
-              }
-              return (
-                <Chip
-                  key={t.key}
-                  label={badge ? `${t.label} (${badge})` : t.label}
-                  icon={t.icon}
-                  active={tab === t.key}
-                  tint={RED}
-                  onPress={() => {
-                    setExpanded(null);
-                    setTab(t.key);
-                  }}
-                />
-              );
-            })}
-          </ScrollView>
+          {/* Sekmeler (İki Satırlı Grup - DESIGN_PLAN §6) */}
+          <View style={styles.tabsGroupWrap}>
+            <View style={{ gap: 4 }}>
+              <Text style={styles.tabGroupHeader}>Akademik</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
+                {ACADEMIC_TABS.map((t) => {
+                  let badge: string | undefined;
+                  if (t.key === 'notlar' && unseenGrades.length > 0) {
+                    badge = `${unseenGrades.length}`;
+                  }
+                  return (
+                    <Chip
+                      key={t.key}
+                      label={badge ? `${t.label} (${badge})` : t.label}
+                      icon={t.icon}
+                      active={tab === t.key}
+                      tint={RED}
+                      onPress={() => {
+                        setExpanded(null);
+                        setTab(t.key);
+                      }}
+                    />
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            <View style={{ gap: 4 }}>
+              <Text style={styles.tabGroupHeader}>İdari</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
+                {ADMIN_TABS.map((t) => {
+                  let badge: string | undefined;
+                  if (t.key === 'mesajlar' && messages && messages.unreadCount > 0) {
+                    badge = `${messages.unreadCount}`;
+                  }
+                  return (
+                    <Chip
+                      key={t.key}
+                      label={badge ? `${t.label} (${badge})` : t.label}
+                      icon={t.icon}
+                      active={tab === t.key}
+                      tint={RED}
+                      onPress={() => {
+                        setExpanded(null);
+                        setTab(t.key);
+                      }}
+                    />
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
 
           {tabContent}
           <View style={{ height: 32 }} />
@@ -1055,7 +1318,7 @@ export default function ObsScreen() {
 
       {/* Sınav istatistikleri */}
       <Modal visible={statsVisible} animationType="slide" onRequestClose={() => setStatsVisible(false)}>
-        <SafeAreaView style={styles.safe} edges={['top']}>
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
           <View style={styles.topBar}>
             <ScreenHeader
               title={stats ? stats.courseCode : 'İstatistik'}
@@ -1159,7 +1422,7 @@ export default function ObsScreen() {
 
       {/* Mesaj Detayı Modalı */}
       <Modal visible={msgModalVisible} animationType="slide" onRequestClose={() => setMsgModalVisible(false)}>
-        <SafeAreaView style={styles.safe} edges={['top']}>
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
           <View style={styles.topBar}>
             <ScreenHeader
               title={selectedMessage ? selectedMessage.sender : 'Mesaj'}
@@ -1196,7 +1459,7 @@ const styles = themedStyles(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.background },
   topBar: { backgroundColor: RED },
   logoutBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
-  content: { padding: Theme.spacing.lg, gap: Theme.spacing.md },
+  content: { padding: Theme.spacing.lg, paddingBottom: 32, gap: Theme.spacing.md },
 
   loginWrap: { padding: Theme.spacing.lg, gap: Theme.spacing.lg },
   loginHero: { alignItems: 'center', gap: 8, paddingVertical: 12 },
@@ -1264,4 +1527,117 @@ const styles = themedStyles(() => StyleSheet.create({
   footNote: { ...Theme.text.small, color: C.textMuted, lineHeight: 17, textAlign: 'center', paddingHorizontal: 8 },
   sectionHeading: { ...Theme.text.h3, color: C.textPrimary, marginVertical: 4 },
   footNoteDate: { ...Theme.text.caption, color: C.textMuted, marginTop: 2 },
+
+  // İki Satırlı Sekme Grubu (DESIGN_PLAN §6)
+  tabsGroupWrap: {
+    gap: 8,
+    marginBottom: 10,
+  },
+  tabGroupHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    paddingHorizontal: 4,
+  },
+  tabsRow: {
+    gap: 6,
+    paddingVertical: 2,
+  },
+
+  // Mezuniyet Tab Stilleri (ROADMAP_V2 O1 & DESIGN_PLAN §6)
+  gradSummaryCard: {
+    padding: 16,
+    gap: 14,
+    backgroundColor: C.surface,
+  },
+  gradSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  gradSummaryTitle: {
+    ...Theme.text.h3,
+    color: C.textPrimary,
+  },
+  gradSummaryValues: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: RED,
+  },
+  gradDateText: {
+    ...Theme.text.small,
+    color: C.textSecondary,
+    marginTop: 2,
+  },
+  gradDurationWrap: {
+    gap: 6,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.cardBorder,
+  },
+  gradDurationLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.textMuted,
+  },
+  gradDurationPct: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: RED,
+  },
+  criteriaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    backgroundColor: C.surfaceSubtle,
+    borderRadius: Theme.radius.md,
+    padding: 3,
+    gap: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Theme.radius.sm,
+  },
+  segmentBtnActive: {
+    backgroundColor: C.surface,
+    ...Theme.shadows.sm,
+  },
+  segmentBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.textMuted,
+  },
+  segmentBtnTextActive: {
+    color: RED,
+    fontWeight: '800',
+  },
+  codeBadge: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: RED,
+    backgroundColor: C.uniRedSoft,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  gradeBadgeFail: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gradeBadgeTextFail: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
 }));
