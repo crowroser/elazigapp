@@ -425,7 +425,16 @@ export default function ObsScreen() {
       <>
         <SemesterBar semesters={timetable.semesters} current={timetable.currentSemester} onSelect={(c) => loadTab('program', c)} />
         {byDay.length === 0 ? (
-          <EmptyState icon="calendar-blank-outline" title="Ders programı bulunamadı" description="Bu dönem için tanımlı program yok." tint={RED} />
+          <EmptyState
+            icon="calendar-blank-outline"
+            title={timetable.notPublished ? 'Ders programı henüz yayınlanmadı' : 'Ders programı bulunamadı'}
+            description={
+              timetable.notPublished
+                ? `${timetable.semesters.find((x) => x.code === timetable.currentSemester)?.name || 'Güncel dönem'} için OBS'de henüz program girilmemiş. Önceki dönemleri yukarıdan seçebilirsin.`
+                : 'Bu dönem için tanımlı program yok.'
+            }
+            tint={RED}
+          />
         ) : (
           <View style={styles.list}>
             {byDay.map(({ day, items }) => {

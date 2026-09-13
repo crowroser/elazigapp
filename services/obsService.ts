@@ -148,6 +148,8 @@ export interface ObsTimetableResult {
   entries: ObsTimetableEntry[];
   semesters: ObsSemester[];
   currentSemester: string;
+  /** Aktif/yeni yarıyıl için OBS'de henüz program yok (eski döneme düşülmez; kullanıcı dönem çubuğundan seçebilir) */
+  notPublished?: boolean;
 }
 
 export interface ObsTakenCourse {
@@ -205,6 +207,8 @@ export interface ObsExamScheduleResult {
   groups: ObsExamScheduleGroup[];
   semesters: ObsSemester[];
   currentSemester: string;
+  /** Aktif/yeni yarıyıl için OBS'de henüz sınav takvimi yok */
+  notPublished?: boolean;
 }
 
 export interface ObsSemesterHistory {
@@ -749,6 +753,37 @@ async function loadSemesterPage(
     return { html: next.html, semesters, current: target, page: next };
   }
   return { html: page.html, semesters, current: target, page };
+}
+
+/** "2026-2027 Güz Yarıyılı" → 20261, "2025-2026 Bahar" → 20252, Yaz → 3; tanınmazsa 0 */
+function semesterRank(name: string): number {
+  const y = name.match(/(\d{4})\s*[-–/]\s*\d{4}/) || name.match(/(\d{4})/);
+  if (!y) return 0;
+  const term = /güz|guz|fall/i.test(name) ? 1 : /bahar|spring/i.test(name) ? 2 : /yaz|summer/i.test(name) ? 3 : 0;
+  return parseInt(y[1], 10) * 10 + term;
+}
+
+/**
+ * Tercih edilen dönem sırası: öğrencinin OBS'deki "Aktif Yarıyıl"ı → ada göre en yeni dönem → OBS'nin
+ * açılışta seçtiği → kalanlar yeniden eskiye. İlk eleman "güncel dönem" kabul edilir; program/sınav takvimi
+ * boşsa eski döneme DÜŞÜLMEZ (kullanıcı geçen dönemi güncel sanmasın), notPublished ile işaretlenir.
+ */
+function semesterTryOrder(semesters: ObsSemester[], selected: string): string[] {
+  const byRank = [...semesters].sort((a, b) => semesterRank(b.name) - semesterRank(a.name));
+  const order: string[] = [];
+  const push = (code?: string) => {
+    if (code && !order.includes(code) && semesters.some((s) => s.code === code)) order.push(code);
+  };
+  const active = (cachedStudent?.activeSemester || '').trim();
+  if (active) {
+    const norm = (x: string) => x.toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ').trim();
+    const hit = semesters.find((s) => norm(s.name) === norm(active) || norm(active).startsWith(norm(s.name)) || norm(s.name).startsWith(norm(active)));
+    push(hit?.code);
+  }
+  push(byRank[0]?.code);
+  push(selected);
+  byRank.forEach((s) => push(s.code));
+  return order;
 }
 
 // ─── Login ───────────────────────────────────────────────────────────────────
@@ -1885,19 +1920,19 @@ export const ObsService = {
     const res = await loadSemesterPage('Ders Programı', PAGE.dersProgrami, semesterCode);
     let entries = parseTimetable(res.html);
     let current = res.current;
-    if (!semesterCode && entries.length === 0 && res.semesters.length > 1) {
-      // Yeni yarıyılda program henüz yoksa bir önceki dönemi göster
-      const alt = res.semesters.find((s) => s.code !== current);
-      if (alt) {
-        const r2 = await loadSemesterPage('Ders Programı', PAGE.dersProgrami, alt.code);
-        const e2 = parseTimetable(r2.html);
-        if (e2.length > 0) {
-          entries = e2;
-          current = r2.current;
-        }
+    let notPublished = false;
+    if (!semesterCode && res.semesters.length > 0) {
+      // Dönem seçilmediyse güncel (aktif / en yeni) dönemi göster; OBS açılışta eski yarıyılı seçili getirebilir
+      const preferred = semesterTryOrder(res.semesters, res.current)[0];
+      if (preferred && preferred !== current) {
+        const r = await loadSemesterPage('Ders Programı', PAGE.dersProgrami, preferred);
+        entries = parseTimetable(r.html);
+        current = preferred;
       }
+      notPublished = entries.length === 0;
+      console.log('[OBS] timetable', JSON.stringify({ active: cachedStudent?.activeSemester, selected: res.current, picked: current, count: entries.length }));
     }
-    return { entries, semesters: res.semesters, currentSemester: current };
+    return { entries, semesters: res.semesters, currentSemester: current, notPublished };
   },
 
   async getTakenCourses(semesterCode?: string): Promise<ObsTakenCoursesResult> {
@@ -1946,7 +1981,20 @@ export const ObsService = {
 
   async getExamSchedule(semesterCode?: string): Promise<ObsExamScheduleResult> {
     const res = await loadSemesterPage('Sınav Takvimi', PAGE.sinavTakvimi, semesterCode);
-    return { groups: parseExamSchedule(res.html), semesters: res.semesters, currentSemester: res.current };
+    let groups = parseExamSchedule(res.html);
+    let current = res.current;
+    let notPublished = false;
+    if (!semesterCode && res.semesters.length > 0) {
+      // Ders programıyla aynı kural: güncel dönem; boşsa eski döneme düşme
+      const preferred = semesterTryOrder(res.semesters, res.current)[0];
+      if (preferred && preferred !== current) {
+        const r = await loadSemesterPage('Sınav Takvimi', PAGE.sinavTakvimi, preferred);
+        groups = parseExamSchedule(r.html);
+        current = preferred;
+      }
+      notPublished = groups.length === 0;
+    }
+    return { groups, semesters: res.semesters, currentSemester: current, notPublished };
   },
 
   /** Transkript PDF adresi (menüden; oturum çerezi gerektirir) */
