@@ -56,3 +56,6 @@ google-services.json
 __*.ts
 __*.mjs
 probe_*.mjs
+
+# Binaries
+*.apk
