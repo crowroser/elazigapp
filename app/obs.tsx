@@ -37,6 +37,7 @@ import {
   ObsGraduationAnalysis,
   calculateGraduationTarget,
   diffGrades,
+  graduationDuration,
 } from '../services/obsService';
 import { PrefsService, GradeChange } from '../services/prefsService';
 import {
@@ -919,7 +920,8 @@ export default function ObsScreen() {
     const targetAkts = aktsCrit && aktsCrit.target ? parseInt(aktsCrit.target, 10) : 240;
     const aktsProgress = targetAkts > 0 ? completedAkts / targetAkts : 0;
 
-    const isExceededPeriod = graduation.periodsStudied > graduation.maxDuration;
+    const dur = graduationDuration(graduation);
+    const isExceededPeriod = dur.exceededMax;
     const projection = calculateGraduationTarget(
       graduation.agno,
       completedAkts,
@@ -958,10 +960,10 @@ export default function ObsScreen() {
           <View style={styles.gradDurationWrap}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={styles.gradDurationLabel}>
-                Okuduğu Dönem: {graduation.periodsStudied} / {graduation.normalDuration} (Azami: {graduation.maxDuration})
+                {graduation.periodsStudied}. dönem ({dur.yearOfStudy}. yıl) · Normal {graduation.normalDuration} yıl · Azami {graduation.maxDuration} yıl
               </Text>
-              <Text style={[styles.gradDurationPct, isExceededPeriod && { color: C.danger }]}>
-                %{graduation.durationProgressPct}
+              <Text style={[styles.gradDurationPct, isExceededPeriod && { color: C.danger }, !isExceededPeriod && dur.pastNormal && { color: C.warning }]}>
+                %{dur.pctOfMax}
               </Text>
             </View>
             <View style={styles.barTrack}>
@@ -969,17 +971,19 @@ export default function ObsScreen() {
                 style={[
                   styles.barFill,
                   {
-                    width: `${Math.min(100, graduation.durationProgressPct)}%`,
-                    backgroundColor: isExceededPeriod ? C.danger : RED,
+                    width: `${dur.pctOfMax}%`,
+                    backgroundColor: isExceededPeriod ? C.danger : dur.pastNormal ? C.warning : RED,
                   },
                 ]}
               />
             </View>
             {isExceededPeriod ? (
+              <Notice tone="danger" text={`Azami öğrenim süresi (${graduation.maxDuration} yıl / ${dur.maxTerms} dönem) aşılmış durumda.`} icon="alert-circle" />
+            ) : dur.pastNormal ? (
               <Notice
                 tone="warning"
-                text="Azami öğrenim süresi aşılmış durumda."
-                icon="alert-circle"
+                text={`Normal süre (${graduation.normalDuration} yıl) doldu; azami süreye ${dur.remainingTermsToMax} dönem kaldı.`}
+                icon="time-outline"
               />
             ) : null}
           </View>

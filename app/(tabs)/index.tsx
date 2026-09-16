@@ -30,7 +30,7 @@ import {
 import { AuthService, UserProfile } from '../../services/authService';
 import { PrefsService, FavoriteStop } from '../../services/prefsService';
 import { cached } from '../../services/cacheService';
-import { ObsService, ObsTimetableEntry, ObsGraduationAnalysis } from '../../services/obsService';
+import { ObsService, ObsTimetableEntry, ObsGraduationAnalysis, graduationDuration } from '../../services/obsService';
 import { CardQueryModal } from '../../components/CardQueryModal';
 import { AuthProfileModal } from '../../components/AuthProfileModal';
 import { BriefCard } from '../../components/BriefCard';
@@ -592,7 +592,8 @@ export default function HomeScreen() {
           const nextLesson = upcoming[0] || null;
           const aktsCrit = obsGrad?.criteria.find((c) => c.key === 'akts');
           const agnoText = obsGrad?.agno != null ? obsGrad.agno.toFixed(2).replace('.', ',') : '—';
-          const termText = obsGrad ? `${obsGrad.periodsStudied}/${obsGrad.maxDuration}` : '—';
+          // OBS azami süreyi yıl verir; dönem sayısını yıla çevirip aynı birimde göster (8 dönem → 4/7 yıl)
+          const termText = obsGrad ? `${graduationDuration(obsGrad).yearOfStudy}/${obsGrad.maxDuration}` : '—';
           const aktsText = aktsCrit?.value ? `${aktsCrit.value}/${aktsCrit.target || 240}` : '—';
           return (
             <TouchableOpacity
@@ -621,7 +622,7 @@ export default function HomeScreen() {
                 <View style={styles.obsStatDivider} />
                 <View style={styles.obsStat}>
                   <Text style={styles.obsStatValue}>{termText}</Text>
-                  <Text style={styles.obsStatLabel}>DÖNEM</Text>
+                  <Text style={styles.obsStatLabel}>YIL</Text>
                 </View>
                 <View style={styles.obsStatDivider} />
                 <View style={styles.obsStat}>

@@ -357,9 +357,13 @@ export interface ObsGraduationAnalysis {
   registrationReason: string;
   studentStatus: string;
   curriculum: string;
+  /** Okuduğu dönem sayısı (yarıyıl) */
   periodsStudied: number;
+  /** Normal öğrenim süresi — OBS bunu YIL olarak verir ("Normal / Azami Süre: 4 / 7") */
   normalDuration: number;
+  /** Azami öğrenim süresi (YIL) */
   maxDuration: number;
+  /** OBS'nin kendi yüzdesi (yarıyıl/yıl karışık hesaplıyor: 2 dönem → %29, 8 dönem → %100); ekranda kullanılmaz */
   durationProgressPct: number;
   agno: number | null;
   completionWarning: string;
@@ -1612,9 +1616,8 @@ export function parseGraduationAnalysis(html: string, approvalHtml = ''): ObsGra
   const mufSection = html.split(/lblMufHdrKod/i)[1]?.split(/lblBasHdrTerm/i)[0] || '';
   const mufRowChunks = mufSection.split(/<div class="row rpt-row py-1">/i).slice(1);
   for (const chunk of mufRowChunks) {
-    const cols = [...chunk.matchAll(/<div class="col-[^"]*">([\s\S]*?)<\/div>/gi)].map((c) =>
-      decodeEntities(c[1].replace(/<[^>]*>/g, '')).trim()
-    );
+    // textOf: "SU SPORLARI  ÖĞRETİM" gibi çift boşluklar tek boşluğa iner
+    const cols = [...chunk.matchAll(/<div class="col-[^"]*">([\s\S]*?)<\/div>/gi)].map((c) => textOf(c[1]));
     if (cols.length >= 5) {
       const isGroupHeader = /gruba\s+ait|ders\s+alınmalıdır/i.test(cols[4]);
       uncompletedCourses.push({
@@ -1726,6 +1729,29 @@ export function calculateGraduationTarget(
     remainingAkts,
     estimatedTermsRemaining,
     message: `AGNO'yu ${targetAgno.toFixed(2)}'ye çıkarmak için kalan ${remainingAkts} AKTS'den ${neededAverageGrade} gerekiyor.`,
+  };
+}
+
+/**
+ * Süre bilgisini tutarlı birime çevirir: OBS "Okuduğu Dönem"i yarıyıl, "Normal / Azami Süre"yi yıl verir.
+ * 8 dönem okuyan 4. sınıf öğrencisi için 8 > 7 karşılaştırması yanlış "azami süre aşıldı" üretir; bu yüzden
+ * yıl → yarıyıl (×2) çevrimiyle hesaplanır. İki HAR ile doğrulandı (2026-09-13 / 2026-09-16).
+ */
+export function graduationDuration(g: Pick<ObsGraduationAnalysis, 'periodsStudied' | 'normalDuration' | 'maxDuration'>) {
+  const normalTerms = g.normalDuration * 2;
+  const maxTerms = g.maxDuration * 2;
+  const yearOfStudy = Math.max(1, Math.ceil(g.periodsStudied / 2));
+  return {
+    normalTerms,
+    maxTerms,
+    yearOfStudy,
+    /** Azami süreye göre ilerleme (0–100) */
+    pctOfMax: maxTerms > 0 ? Math.min(100, Math.round((g.periodsStudied / maxTerms) * 100)) : 0,
+    /** Normal sürenin çubuk üzerindeki konumu (0–100) */
+    normalMarkPct: maxTerms > 0 ? Math.min(100, Math.round((normalTerms / maxTerms) * 100)) : 0,
+    pastNormal: g.periodsStudied > normalTerms,
+    exceededMax: g.periodsStudied > maxTerms,
+    remainingTermsToMax: Math.max(0, maxTerms - g.periodsStudied),
   };
 }
 
