@@ -54,7 +54,8 @@ class WidgetDataModule(reactContext: ReactApplicationContext) : ReactContextBase
             context.sendBroadcast(intent)
         }
 
-        // Namaz canlı bildirimi açıksa yeni vakitlerle tazele
+        // Namaz / ders zili canlı bildirimleri açıksa yeni verilerle tazele
         LiveNotifications.refreshPrayerLive(context)
+        LiveNotifications.refreshLessonLive(context)
     }
 }

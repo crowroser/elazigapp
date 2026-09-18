@@ -36,6 +36,8 @@ export interface WidgetData {
   brief_line_3?: string;
   brief_icon_4?: string;
   brief_line_4?: string;
+  /** B6: Ders zili canlı bildirimi için haftalık program (BriefService.getLessonsJson) */
+  lessons_json?: string;
   updated_at?: string;
 }
 
@@ -75,6 +77,21 @@ export const WidgetService = {
       console.warn('Widget verisi okunamadı:', e);
     }
     return {};
+  },
+
+  /**
+   * B6: Yalnızca ders programını (gerekirse OBS'ye girerek) native tarafa yazar; ders zili açılırken çağrılır
+   * ki bildirim ilk andan doğru dersi göstersin. Native updateWidgetData ardından refreshLessonLive'ı çalıştırır.
+   */
+  async syncTimetableForLive(): Promise<boolean> {
+    try {
+      const lessons_json = await BriefService.getLessonsJson({ quick: false });
+      if (lessons_json == null) return false;
+      return await this.updateNativeWidgets({ lessons_json });
+    } catch (e) {
+      console.warn('[WidgetService] ders programı senkronu hatası:', e);
+      return false;
+    }
   },
 
   /** Tüm widget verilerini canlı kaynaklardan çeker ve native katmana basar */
@@ -157,7 +174,13 @@ export const WidgetService = {
         Object.assign(next, BriefService.toWidgetData(brief));
       } catch (e) {}
 
-      // Not: native updateWidgetData, namaz canlı geri sayımı (L1) açıksa onu da yeni vakitlerle tazeler
+      // B6: Ders zili canlı bildirimi haftalık programı native tarafta okur
+      try {
+        const lessons = await BriefService.getLessonsJson({ quick: true });
+        if (lessons != null) next.lessons_json = lessons;
+      } catch (e) {}
+
+      // Not: native updateWidgetData, namaz (L1) ve ders zili (B6) canlı bildirimleri açıksa onları da tazeler
       return await this.updateNativeWidgets(next);
     } catch (e) {
       console.warn('[WidgetService] syncWidgets hatası:', e);

@@ -431,6 +431,23 @@ export const BriefService = {
     return { greeting, dateText, horizon, items, summaryLine, builtAt: Date.now(), partial };
   },
 
+  /**
+   * Haftalık ders programının native tarafa yazılacak kompakt hali (LiveNotifications.KEY_LESSONS_JSON):
+   * [{ d: 0=Pazartesi, s: "HH:mm", e: "HH:mm", c: ders adı, r: derslik }].
+   * OBS hesabı yoksa ya da program yayınlanmamışsa "[]"; quick modda önbellek de yoksa null
+   * (bilinmiyor → native taraftaki eski program ezilmesin).
+   */
+  async getLessonsJson(opts: { quick?: boolean } = {}): Promise<string | null> {
+    const creds = await ObsService.getCredentials().catch(() => null);
+    if (!creds?.studentNo) return '[]';
+    const obs = await loadObs(!!opts.quick);
+    if (obs.entries.length === 0 && !obs.timetableUnpublished) return null;
+    const rows = obs.entries
+      .filter((e) => toMinutes(e.startTime) != null)
+      .map((e) => ({ d: e.dayIndex, s: e.startTime, e: e.endTime, c: e.courseName || e.courseCode, r: e.room || '' }));
+    return JSON.stringify(rows);
+  },
+
   /** Widget'a basılacak düz anahtar/değer haritası (BriefWidgetProvider ile uyumlu) */
   toWidgetData(brief: DailyBrief): Record<string, string> {
     const data: Record<string, string> = {

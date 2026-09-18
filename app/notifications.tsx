@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Vibration, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Vibration, Alert, Platform, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,8 +8,9 @@ import { Theme, themedStyles, useAppTheme } from '../constants/Theme';
 import { ApiService, CardBalanceResult, DiningMenu, RouteLineItem } from '../services/apiService';
 import { PrefsService } from '../services/prefsService';
 import { NotificationService, NotifPreferences } from '../services/notificationService';
-import { LiveNotificationService, LiveCapabilities } from '../services/liveNotificationService';
+import { LiveNotificationService, LiveCapabilities, LOCKSCREEN_HINT_KEY } from '../services/liveNotificationService';
 import { ObsService } from '../services/obsService';
+import { WidgetService } from '../services/widgetService';
 import { Card, Chip, IconCircle, LoadingState, Notice, Pill, PrimaryButton, ScreenHeader, SectionTitle } from '../components/ui';
 
 const C = Theme.colors;
@@ -58,8 +59,10 @@ export default function NotificationsScreen() {
     briefEveningEnabled: false,
     briefEveningTime: '21:00',
     prayerLiveEnabled: false,
+    lessonLiveEnabled: false,
   });
   const [liveCaps, setLiveCaps] = useState<LiveCapabilities | null>(null);
+  const [lockHintDone, setLockHintDone] = useState(true);
 
   const [hasPermission, setHasPermission] = useState(true);
   const [scheduledCount, setScheduledCount] = useState(0);
@@ -83,7 +86,8 @@ export default function NotificationsScreen() {
       // 2. Tercihleri yükle
       const p = await NotificationService.getPreferences();
       setPrefs(p);
-      LiveNotificationService.getCapabilities().then(setLiveCaps).catch(() => {});
+      syncLive().catch(() => {});
+      AsyncStorage.getItem(LOCKSCREEN_HINT_KEY).then((v) => setLockHintDone(v === '1')).catch(() => {});
 
       try {
         const raw = await AsyncStorage.getItem(LEGACY_KEY);
@@ -108,8 +112,31 @@ export default function NotificationsScreen() {
       setRoutes(r);
       if (no) checkBalance(no);
     })();
+    // Sistem ayarlarından (Canlı güncellemeler / Alarmlar izni) ya da kilit ekranındaki "Kapat"tan dönüşte tazele
+    const appStateSub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') syncLive().catch(() => {});
+    });
+    return () => appStateSub.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Yetenekleri okur ve JS tercihlerini native durumla eşitler: bildirimdeki "Kapat" düğmesi native tercihi
+   * kapatır, uygulama tekrar öne gelince anahtar da kapalıya düşmeli.
+   */
+  async function syncLive() {
+    const [p, caps] = await Promise.all([NotificationService.getPreferences(), LiveNotificationService.getCapabilities()]);
+    setLiveCaps(caps);
+    if (caps && ((p.prayerLiveEnabled && !caps.prayerLiveEnabled) || (p.lessonLiveEnabled && !caps.lessonLiveEnabled))) {
+      const synced = {
+        ...p,
+        prayerLiveEnabled: p.prayerLiveEnabled && caps.prayerLiveEnabled,
+        lessonLiveEnabled: p.lessonLiveEnabled && caps.lessonLiveEnabled,
+      };
+      setPrefs(synced);
+      await NotificationService.savePreferences(synced);
+    }
+  }
 
   const savePrefs = async (next: NotifPreferences) => {
     setPrefs(next);
@@ -135,6 +162,11 @@ export default function NotificationsScreen() {
       // L1: Native AlarmManager'lı geri sayım bildirimi
       const ok = await LiveNotificationService.setPrayerLiveEnabled(Boolean(v));
       if (!ok && v) Alert.alert('Desteklenmiyor', "Bu build'de canlı bildirim modülü yok (Android native build gerekir).");
+    } else if (k === 'lessonLiveEnabled') {
+      // B6: Ders zili — önce güncel program native tarafa yazılır, sonra alarm kurulur
+      const ok = await LiveNotificationService.setLessonLiveEnabled(Boolean(v));
+      if (!ok && v) Alert.alert('Desteklenmiyor', "Bu build'de canlı bildirim modülü yok (Android native build gerekir).");
+      else if (v) WidgetService.syncTimetableForLive().catch(() => {});
     }
 
     // Güncel plan sayısını yenile
@@ -317,8 +349,45 @@ export default function NotificationsScreen() {
                   disabled={!LiveNotificationService.isAvailable()}
                 />
               </View>
+              <View style={styles.row}>
+                <IconCircle name="school-outline" color={C.uniRed} bg={C.uniRedSoft} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.title}>Ders Zili — Şu Anki / Sıradaki Ders</Text>
+                  <Text style={styles.sub}>
+                    {!hasObsAccount
+                      ? 'OBS hesabı bağlayınca kullanılabilir'
+                      : 'Ders başlamadan 45 dk önce geri sayım, ders boyunca bitişe kadar sayaç; günün son dersinden sonra kapanır'}
+                  </Text>
+                </View>
+                <Switch
+                  value={prefs.lessonLiveEnabled}
+                  onValueChange={(v) => updatePref('lessonLiveEnabled', v)}
+                  trackColor={{ true: C.uniRed }}
+                  disabled={!LiveNotificationService.isAvailable() || !hasObsAccount}
+                />
+              </View>
               {liveCaps?.promoted && !liveCaps.canPostPromoted ? (
                 <Notice tone="info" text="Ayarlar > Bildirimler > Canlı güncellemeler altında Elazığ Şehir'e izin verin; aksi halde sayaç yalnızca bildirim panelinde görünür." />
+              ) : null}
+              {liveCaps?.lockscreenContentHidden && !lockHintDone && (prefs.lessonLiveEnabled || prefs.prayerLiveEnabled) ? (
+                <Notice
+                  tone="info"
+                  icon="lock-closed-outline"
+                  text="Samsung kilit ekranında Now Bar yalnızca 'Elazığ Şehir' gösteriyor. Dokun → 'Kilitliyken içeriği göster veya gizle' → Her zaman göster."
+                  onPress={() => {
+                    AsyncStorage.setItem(LOCKSCREEN_HINT_KEY, '1').catch(() => {});
+                    setLockHintDone(true);
+                    LiveNotificationService.openAppNotificationSettings();
+                  }}
+                />
+              ) : null}
+              {liveCaps && !liveCaps.exactAlarms && (prefs.lessonLiveEnabled || prefs.prayerLiveEnabled) ? (
+                <Notice
+                  tone="warning"
+                  icon="alarm-outline"
+                  text="Dakika hassasiyeti için 'Alarmlar ve hatırlatıcılar' iznini açın — aksi halde ders/vakit geçişleri 10 dk'ya kadar gecikebilir. Dokunup izin verin."
+                  onPress={() => LiveNotificationService.requestExactAlarms()}
+                />
               ) : null}
               <Text style={styles.sub}>
                 Otobüs canlı takibi ayrı bir ayar gerektirmez: Ulaşım ekranında "Haber ver"e dokunduğunuz araç varana kadar Now Bar'da takip edilir.

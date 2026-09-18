@@ -11,6 +11,7 @@ import { NativeModules, Platform } from 'react-native';
  * Kullanım alanları:
  *  1. Otobüs varış takibi (ulaşım ekranı "Haber ver" ile birlikte)
  *  2. Namaz vaktine geri sayım (native AlarmManager kendini yeniler)
+ *  3. Ders zili: şu anki / sıradaki ders (B6; program WidgetService.syncWidgets ile lessons_json olarak yazılır)
  */
 
 const { LiveNotificationModule } = NativeModules;
@@ -30,6 +31,8 @@ export interface LiveSpec {
   deepLink?: string;
   /** İlerleme çubuğu üzerindeki ara noktalar (0..100) */
   progressPoints?: number[];
+  /** Genişleyen kartta düğmeler (Samsung Now Bar'da kilit ekranından tek dokunuş) */
+  actions?: { label: string; deepLink?: string }[];
 }
 
 export interface LiveCapabilities {
@@ -39,8 +42,16 @@ export interface LiveCapabilities {
   /** Kullanıcı "Canlı güncellemeler" iznini kapatmamış */
   canPostPromoted: boolean;
   prayerLiveEnabled: boolean;
+  lessonLiveEnabled: boolean;
+  /** Android 12+: "Alarmlar ve hatırlatıcılar" izni — yoksa ders/vakit geçişleri 10 dk'ya kadar gecikebilir */
+  exactAlarms: boolean;
+  /** Samsung: global "Kilitliyken içeriği gizle" açık → Now Bar kilit ekranında yalnızca uygulama adı gösterir */
+  lockscreenContentHidden: boolean;
   manufacturer: string;
 }
+
+/** Kilit ekranı içerik ipucu bir kez gösterilir (uygulama bazlı ayar uygulamadan okunamıyor) */
+export const LOCKSCREEN_HINT_KEY = '@live_lockscreen_hint_done';
 
 export const BUS_LIVE_ID = 'bus_tracking';
 
@@ -119,8 +130,9 @@ export const LiveNotificationService = {
     const stopsText = input.stopsLeft != null ? `${input.stopsLeft} durak` : null;
     const details = [stopsText, input.plate || null].filter(Boolean).join(' · ');
 
+    const deepLink = `elazigsehir://transit?stopId=${encodeURIComponent(input.stopId)}`;
     return this.show(BUS_LIVE_ID, {
-      title: `🚌 ${lineLabel} → ${input.stopName}`,
+      title: `${lineLabel} → ${input.stopName}`,
       text: details ? `${details} · ${input.lineName || ''}`.trim().replace(/ · $/, '') : input.lineName || 'Yaklaşıyor',
       subText: 'Canlı takip',
       shortText: etaText,
@@ -128,7 +140,8 @@ export const LiveNotificationService = {
       progressPoints: points,
       chronometerEndMs: input.etaMin != null && input.etaMin > 0 ? Date.now() + input.etaMin * 60_000 : undefined,
       ongoing: true,
-      deepLink: `elazigsehir://transit?stopId=${encodeURIComponent(input.stopId)}`,
+      deepLink,
+      actions: [{ label: 'Haritada aç', deepLink }],
     });
   },
 
@@ -137,7 +150,7 @@ export const LiveNotificationService = {
     busBaseline = null;
     if (!this.isAvailable()) return;
     this.show(BUS_LIVE_ID, {
-      title: `🚌 Hat ${input.lineNo} durağa vardı`,
+      title: `Hat ${input.lineNo} durağa vardı`,
       text: input.stopName,
       shortText: 'Vardı',
       progress: 100,
@@ -169,5 +182,50 @@ export const LiveNotificationService = {
     try {
       LiveNotificationModule.refreshPrayerLive();
     } catch {}
+  },
+
+  // ─── Ders zili (B6) ───────────────────────────────────────────────────────
+
+  /**
+   * Şu anki dersi (bitişe kronometre) ya da 45 dk içinde başlayacak dersi (başlangıca geri sayım) gösterir.
+   * Program native tarafta lessons_json'dan okunur; açarken güncel programı yazmak çağıranın işi
+   * (WidgetService.syncTimetableForLive).
+   */
+  async setLessonLiveEnabled(enabled: boolean): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+    try {
+      await LiveNotificationModule.setLessonLiveEnabled(enabled);
+      return true;
+    } catch (e) {
+      console.warn('[LiveNotification] ders zili ayarlanamadı:', e);
+      return false;
+    }
+  },
+
+  refreshLessonLive(): void {
+    if (!this.isAvailable()) return;
+    try {
+      LiveNotificationModule.refreshLessonLive();
+    } catch {}
+  },
+
+  /** Uygulamanın bildirim ayarlarını açar — Samsung'da "Kilitliyken içeriği göster veya gizle" seçeneği burada */
+  async openAppNotificationSettings(): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+    try {
+      return await LiveNotificationModule.openAppNotificationSettings();
+    } catch {
+      return false;
+    }
+  },
+
+  /** Sistem "Alarmlar ve hatırlatıcılar" sayfasını açar (Android 12+); dönüşte getCapabilities ile tekrar kontrol edin */
+  async requestExactAlarms(): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+    try {
+      return await LiveNotificationModule.requestExactAlarms();
+    } catch {
+      return false;
+    }
   },
 };

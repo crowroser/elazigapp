@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Switch, Alert, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Theme, themedStyles, useAppTheme } from '../constants/Theme';
 import { BriefService, DailyBrief } from '../services/briefService';
 import { NotificationService, NotifPreferences } from '../services/notificationService';
-import { LiveNotificationService, LiveCapabilities } from '../services/liveNotificationService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LiveNotificationService, LiveCapabilities, LOCKSCREEN_HINT_KEY } from '../services/liveNotificationService';
 import { WidgetService } from '../services/widgetService';
 import { Card, Notice, Pill, ScreenHeader, SectionTitle } from '../components/ui';
 import { briefToneColors } from '../components/BriefCard';
@@ -25,6 +26,7 @@ export default function BriefScreen() {
   const [horizon, setHorizon] = useState<'today' | 'tomorrow'>(new Date().getHours() >= 18 ? 'tomorrow' : 'today');
   const [prefs, setPrefs] = useState<NotifPreferences | null>(null);
   const [caps, setCaps] = useState<LiveCapabilities | null>(null);
+  const [lockHintDone, setLockHintDone] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (h: 'today' | 'tomorrow') => {
@@ -46,10 +48,35 @@ export default function BriefScreen() {
     load(horizon);
   }, [horizon, load]);
 
-  useEffect(() => {
-    NotificationService.getPreferences().then(setPrefs);
-    LiveNotificationService.getCapabilities().then(setCaps);
+  /**
+   * Yetenekleri okur ve JS tercihlerini native durumla eşitler: bildirimdeki "Kapat" düğmesi native tercihi
+   * kapatır, uygulama tekrar öne gelince anahtar da kapalıya düşmeli.
+   */
+  const syncLive = useCallback(async () => {
+    const [p, c] = await Promise.all([NotificationService.getPreferences(), LiveNotificationService.getCapabilities()]);
+    setCaps(c);
+    if (c && ((p.prayerLiveEnabled && !c.prayerLiveEnabled) || (p.lessonLiveEnabled && !c.lessonLiveEnabled))) {
+      const synced = {
+        ...p,
+        prayerLiveEnabled: p.prayerLiveEnabled && c.prayerLiveEnabled,
+        lessonLiveEnabled: p.lessonLiveEnabled && c.lessonLiveEnabled,
+      };
+      setPrefs(synced);
+      NotificationService.savePreferences(synced).catch(() => {});
+    } else {
+      setPrefs(p);
+    }
   }, []);
+
+  useEffect(() => {
+    syncLive().catch(() => {});
+    AsyncStorage.getItem(LOCKSCREEN_HINT_KEY).then((v) => setLockHintDone(v === '1')).catch(() => {});
+    // Sistem ayarlarından (Canlı güncellemeler / Alarmlar izni) ya da kilit ekranındaki "Kapat"tan dönüşte tazele
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') syncLive().catch(() => {});
+    });
+    return () => sub.remove();
+  }, [syncLive]);
 
   const updatePref = async <K extends keyof NotifPreferences>(k: K, v: NotifPreferences[K]) => {
     if (!prefs) return;
@@ -68,6 +95,12 @@ export default function BriefScreen() {
     if (k === 'prayerLiveEnabled') {
       const ok = await LiveNotificationService.setPrayerLiveEnabled(Boolean(v));
       if (!ok && v) Alert.alert('Desteklenmiyor', 'Bu build\'de canlı bildirim modülü yok (Android native build gerekir).');
+    }
+    if (k === 'lessonLiveEnabled') {
+      // B6: Ders zili — önce güncel program native tarafa yazılır, sonra alarm kurulur
+      const ok = await LiveNotificationService.setLessonLiveEnabled(Boolean(v));
+      if (!ok && v) Alert.alert('Desteklenmiyor', 'Bu build\'de canlı bildirim modülü yok (Android native build gerekir).');
+      else if (v) WidgetService.syncTimetableForLive().catch(() => {});
     }
   };
 
@@ -209,6 +242,45 @@ export default function BriefScreen() {
               disabled={!prefs || !liveSupported}
             />
           </View>
+          <View style={styles.row}>
+            <View style={[styles.itemIcon, { backgroundColor: C.uniRedSoft }]}>
+              <MaterialCommunityIcons name="school-outline" size={20} color={C.uniRed} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.itemTitle}>Ders zili — şu anki / sıradaki ders</Text>
+              <Text style={styles.itemSub}>
+                {liveSupported
+                  ? 'Ders başlamadan 45 dk önce geri sayım, ders boyunca bitişe kadar sayaç (OBS programından)'
+                  : 'Bu build\'de canlı bildirim modülü yok'}
+              </Text>
+            </View>
+            <Switch
+              value={!!prefs?.lessonLiveEnabled}
+              onValueChange={(v) => updatePref('lessonLiveEnabled', v)}
+              trackColor={{ true: C.uniRed }}
+              disabled={!prefs || !liveSupported}
+            />
+          </View>
+          {caps?.lockscreenContentHidden && !lockHintDone && (prefs?.lessonLiveEnabled || prefs?.prayerLiveEnabled) ? (
+            <Notice
+              tone="info"
+              icon="lock-closed-outline"
+              text="Samsung kilit ekranında Now Bar yalnızca 'Elazığ Şehir' gösteriyor. Dokun → 'Kilitliyken içeriği göster veya gizle' → Her zaman göster."
+              onPress={() => {
+                AsyncStorage.setItem(LOCKSCREEN_HINT_KEY, '1').catch(() => {});
+                setLockHintDone(true);
+                LiveNotificationService.openAppNotificationSettings();
+              }}
+            />
+          ) : null}
+          {caps && !caps.exactAlarms && (prefs?.lessonLiveEnabled || prefs?.prayerLiveEnabled) ? (
+            <Notice
+              tone="warning"
+              icon="alarm-outline"
+              text="Dakika hassasiyeti için 'Alarmlar ve hatırlatıcılar' iznini açın — yoksa ders/vakit geçişleri 10 dk'ya kadar gecikebilir. Dokunup izin verin."
+              onPress={() => LiveNotificationService.requestExactAlarms()}
+            />
+          ) : null}
           {caps ? (
             <View style={styles.capsRow}>
               <Pill label={`Android ${caps.sdk >= 36 ? '16+' : `API ${caps.sdk}`}`} color={C.textSecondary} bg={C.surfaceSubtle} />

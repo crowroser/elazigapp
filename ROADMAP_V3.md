@@ -65,7 +65,7 @@ Sabah/akşam bildirimi planlanmış `DATE` tetikleyicisi yerine B1 işçisinin *
 
 Sınav takviminden gelen bugünkü ilk sınav için sabah 07:00'de Live Update: "📝 BİÇİMSEL DİLLER · 13:15 · A304", kronometre sınav saatine geri sayar, ilerleme çubuğu gün içindeki konumu gösterir; sınav başlayınca kapanır. Mevcut `LiveNotifications.Spec` yeterli; `PrayerLiveReceiver` benzeri tek alarm.
 
-## B6. Ders zili canlı bildirimi (`S`) — program yayınlanınca
+## B6. Ders zili canlı bildirimi (`S`) — ✅ 2026-09-18 uygulandı (`LessonLiveReceiver`, `lessons_json`; program yayınlanınca gerçek veriyle test edilir)
 
 Ders sırasında "Şu an: X · 10:45'e kadar · sıradaki Y (B302)" ongoing kronometre; günün son dersinden sonra kapanır. Ayarlardan açılır (varsayılan kapalı). Kabul: gün içinde bildirim ders geçişlerinde ≤ 1 dk gecikmeyle değişir (AlarmManager, ders başlangıç/bitiş saatlerine kurulur).
 
@@ -156,7 +156,7 @@ Bu turda elle yapılan adb/uiautomator akışı (`scripts/device-smoke.ps1`): ku
 2. **B1** (arka plan işçisi) — widget/özet/OBS'nin tümünü "canlı" yapar; B3 ve W3 buna dayanır.
 3. **W1** koyu tema + **W4** satır tıklama — hızlı görünür kazanımlar.
 4. **B2** otobüs arka plan ETA — Now Bar kullanımının asıl vaadi.
-5. B5, B6, W2, W3 (program yayınlandıktan sonra gerçek veriyle test edilir).
+5. B5, W2, W3 (program yayınlandıktan sonra gerçek veriyle test edilir); B6 uygulandı, aynı testi bekliyor.
 6. Z1–Z4, sonra P1–P4 ve devreden işler.
 
 # Değişmez kurallar

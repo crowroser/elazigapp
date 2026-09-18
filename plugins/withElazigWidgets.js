@@ -26,6 +26,8 @@ const WIDGET_KOTLIN_FILES = [
   'LiveNotifications.kt',
   'LiveNotificationModule.kt',
   'PrayerLiveReceiver.kt',
+  'LessonLiveReceiver.kt',
+  'LiveActionReceiver.kt',
 ];
 
 /** Kopyalanacak kaynak dosyaları (res altında, göreli yol) */
@@ -51,8 +53,18 @@ const RECEIVERS = [
   { name: '.BriefWidgetProvider', label: 'Günün Özeti Widget', info: '@xml/widget_brief_info' },
 ];
 
-/** Android 16 (API 36) Live Updates / Samsung Now Bar için gerekli izin */
-const PROMOTED_PERMISSION = 'android.permission.POST_PROMOTED_NOTIFICATIONS';
+const LIVE_RECEIVERS = [
+  { name: '.PrayerLiveReceiver', actions: ['com.crowroser.elazigsehir.PRAYER_LIVE_TICK'] },
+  { name: '.LessonLiveReceiver', actions: ['com.crowroser.elazigsehir.LESSON_LIVE_TICK'] },
+  // Bildirim düğmeleri ("Kapat")
+  { name: '.LiveActionReceiver', actions: ['com.crowroser.elazigsehir.PRAYER_LIVE_OFF', 'com.crowroser.elazigsehir.LESSON_LIVE_OFF'] },
+];
+
+/**
+ * Android 16 (API 36) Live Updates / Samsung Now Bar için gerekli izin + ders zili / namaz geçişleri için
+ * dakika hassasiyetli alarm izni (Android 14+'ta kullanıcı "Alarmlar ve hatırlatıcılar"dan açar; yoksa 10 dk pencere)
+ */
+const EXTRA_PERMISSIONS = ['android.permission.POST_PROMOTED_NOTIFICATIONS', 'android.permission.SCHEDULE_EXACT_ALARM'];
 
 function copyFile(src, dest) {
   if (!fs.existsSync(src)) {
@@ -95,11 +107,12 @@ const withWidgetReceivers = (config) =>
         'meta-data': [{ $: { 'android:name': 'android.appwidget.provider', 'android:resource': r.info } }],
       });
     }
-    // Namaz geri sayımı alarm receiver'ı (yalnızca uygulama içinden explicit intent ile tetiklenir)
-    if (!app.receiver.some((x) => x.$ && x.$['android:name'] === '.PrayerLiveReceiver')) {
+    // Namaz geri sayımı / ders zili alarm receiver'ları (yalnızca uygulama içinden explicit intent ile tetiklenir)
+    for (const r of LIVE_RECEIVERS) {
+      if (app.receiver.some((x) => x.$ && x.$['android:name'] === r.name)) continue;
       app.receiver.push({
-        $: { 'android:name': '.PrayerLiveReceiver', 'android:exported': 'false' },
-        'intent-filter': [{ action: [{ $: { 'android:name': 'com.crowroser.elazigsehir.PRAYER_LIVE_TICK' } }] }],
+        $: { 'android:name': r.name, 'android:exported': 'false' },
+        'intent-filter': [{ action: r.actions.map((a) => ({ $: { 'android:name': a } })) }],
       });
     }
     return cfg;
@@ -109,8 +122,10 @@ const withPromotedPermission = (config) =>
   withAndroidManifest(config, (cfg) => {
     const manifest = cfg.modResults.manifest;
     manifest['uses-permission'] = manifest['uses-permission'] || [];
-    if (!manifest['uses-permission'].some((p) => p.$ && p.$['android:name'] === PROMOTED_PERMISSION)) {
-      manifest['uses-permission'].push({ $: { 'android:name': PROMOTED_PERMISSION } });
+    for (const perm of EXTRA_PERMISSIONS) {
+      if (!manifest['uses-permission'].some((p) => p.$ && p.$['android:name'] === perm)) {
+        manifest['uses-permission'].push({ $: { 'android:name': perm } });
+      }
     }
     return cfg;
   });

@@ -55,6 +55,8 @@ export interface NotifPreferences {
   briefEveningTime: string; // "21:00"
   /** L1: Namaz vaktine canlı geri sayım (Now Bar / kilit ekranı) */
   prayerLiveEnabled: boolean;
+  /** B6: Ders zili — şu anki / sıradaki ders canlı bildirimi (Now Bar / kilit ekranı) */
+  lessonLiveEnabled: boolean;
 }
 
 const DEFAULT_PREFS: NotifPreferences = {
@@ -71,6 +73,7 @@ const DEFAULT_PREFS: NotifPreferences = {
   briefEveningEnabled: false,
   briefEveningTime: '21:00',
   prayerLiveEnabled: false,
+  lessonLiveEnabled: false,
 };
 
 const PREFS_KEY = '@notif_preferences';

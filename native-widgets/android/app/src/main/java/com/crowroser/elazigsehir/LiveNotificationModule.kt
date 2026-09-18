@@ -26,6 +26,9 @@ class LiveNotificationModule(reactContext: ReactApplicationContext) : ReactConte
         map.putBoolean("promoted", Build.VERSION.SDK_INT >= 36)
         map.putBoolean("canPostPromoted", LiveNotifications.canPostPromoted(ctx))
         map.putBoolean("prayerLiveEnabled", LiveNotifications.isPrayerLiveEnabled(ctx))
+        map.putBoolean("lessonLiveEnabled", LiveNotifications.isLessonLiveEnabled(ctx))
+        map.putBoolean("exactAlarms", LiveNotifications.canScheduleExact(ctx))
+        map.putBoolean("lockscreenContentHidden", LiveNotifications.lockscreenContentHidden(ctx))
         map.putString("manufacturer", Build.MANUFACTURER ?: "")
         promise.resolve(map)
     }
@@ -36,6 +39,21 @@ class LiveNotificationModule(reactContext: ReactApplicationContext) : ReactConte
         if (opts.hasKey("progressPoints") && opts.getType("progressPoints") == ReadableType.Array) {
             val arr = opts.getArray("progressPoints")
             if (arr != null) for (i in 0 until arr.size()) points.add(arr.getInt(i))
+        }
+        val actions = mutableListOf<LiveNotifications.Action>()
+        if (opts.hasKey("actions") && opts.getType("actions") == ReadableType.Array) {
+            val arr = opts.getArray("actions")
+            if (arr != null) for (i in 0 until arr.size()) {
+                val m = arr.getMap(i) ?: continue
+                val label = m.getString("label") ?: continue
+                actions.add(
+                    LiveNotifications.Action(
+                        label = label,
+                        deepLink = if (m.hasKey("deepLink")) m.getString("deepLink") else null,
+                        broadcast = if (m.hasKey("broadcast")) m.getString("broadcast") else null,
+                    )
+                )
+            }
         }
         val spec = LiveNotifications.Spec(
             title = opts.getString("title") ?: "",
@@ -48,6 +66,7 @@ class LiveNotificationModule(reactContext: ReactApplicationContext) : ReactConte
             ongoing = !opts.hasKey("ongoing") || opts.getBoolean("ongoing"),
             deepLink = if (opts.hasKey("deepLink")) opts.getString("deepLink") else null,
             progressPoints = points,
+            actions = actions,
         )
         LiveNotifications.post(reactApplicationContext, id.hashCode(), spec)
     }
@@ -67,5 +86,30 @@ class LiveNotificationModule(reactContext: ReactApplicationContext) : ReactConte
     @ReactMethod
     fun refreshPrayerLive() {
         LiveNotifications.refreshPrayerLive(reactApplicationContext)
+    }
+
+    /** B6: Ders zili — şu anki / sıradaki ders canlı bildirimi */
+    @ReactMethod
+    fun setLessonLiveEnabled(enabled: Boolean, promise: Promise) {
+        LiveNotifications.setLessonLiveEnabled(reactApplicationContext, enabled)
+        promise.resolve(enabled)
+    }
+
+    /** Program (lessons_json) yeniden yazıldığında çağrılır; açık değilse hiçbir şey yapmaz */
+    @ReactMethod
+    fun refreshLessonLive() {
+        LiveNotifications.refreshLessonLive(reactApplicationContext)
+    }
+
+    /** Uygulama bildirim ayarları (Samsung: "Kilitliyken içeriği göster veya gizle" → Her zaman göster) */
+    @ReactMethod
+    fun openAppNotificationSettings(promise: Promise) {
+        promise.resolve(LiveNotifications.openAppNotificationSettings(reactApplicationContext))
+    }
+
+    /** Android 12+ "Alarmlar ve hatırlatıcılar" izin sayfasını açar; dakika hassasiyetli alarm için gerekir */
+    @ReactMethod
+    fun requestExactAlarms(promise: Promise) {
+        promise.resolve(LiveNotifications.openExactAlarmSettings(reactApplicationContext))
     }
 }

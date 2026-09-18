@@ -22,11 +22,23 @@ import java.util.Calendar
  * Geri sayım (chronometer) sistem tarafından saniye saniye işletilir; uygulama kapalıyken bile akar.
  */
 object LiveNotifications {
-    const val CHANNEL_ID = "live_updates"
+    /** v2: kanal düzeyinde kilit ekranı görünürlüğü PUBLIC (yalnızca oluşturulurken ayarlanabilir) */
+    const val CHANNEL_ID = "live_updates_v2"
+    private const val LEGACY_CHANNEL_ID = "live_updates"
     const val PREFS = "widget_prefs"
     const val PRAYER_NOTIF_ID = 0x51A7
     const val KEY_PRAYER_LIVE = "prayer_live_enabled"
     const val ACTION_PRAYER_TICK = "com.crowroser.elazigsehir.PRAYER_LIVE_TICK"
+    /** Bildirim aksiyon düğmeleri (LiveActionReceiver) */
+    const val ACTION_PRAYER_LIVE_OFF = "com.crowroser.elazigsehir.PRAYER_LIVE_OFF"
+    const val ACTION_LESSON_LIVE_OFF = "com.crowroser.elazigsehir.LESSON_LIVE_OFF"
+    const val LESSON_NOTIF_ID = 0x1E55
+    const val KEY_LESSON_LIVE = "lesson_live_enabled"
+    /** WidgetService.syncWidgets'in yazdığı haftalık program: [{d,s,e,c,r}] (d: 0=Pazartesi, s/e: "HH:mm") */
+    const val KEY_LESSONS_JSON = "lessons_json"
+    const val ACTION_LESSON_TICK = "com.crowroser.elazigsehir.LESSON_LIVE_TICK"
+    /** Sıradaki ders bildirimi ders başlamadan bu kadar önce belirir */
+    private const val LESSON_LEAD_MIN = 45
 
     /** JS tarafından gelen bildirim tanımı */
     data class Spec(
@@ -45,17 +57,25 @@ object LiveNotifications {
         val deepLink: String? = null,
         /** İlerleme çubuğu üzerindeki ara noktalar (0..100) — ör. kalan duraklar */
         val progressPoints: List<Int> = emptyList(),
+        /** Genişleyen kartta düğmeler (Samsung Now Bar bunları `actions` olarak çizer; kilit ekranında tek dokunuş) */
+        val actions: List<Action> = emptyList(),
     )
+
+    /** deepLink → uygulamayı o rotada açar; broadcast → LiveActionReceiver'a iletilir (uygulama açılmaz) */
+    data class Action(val label: String, val deepLink: String? = null, val broadcast: String? = null)
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (nm.getNotificationChannel(LEGACY_CHANNEL_ID) != null) nm.deleteNotificationChannel(LEGACY_CHANNEL_ID)
         if (nm.getNotificationChannel(CHANNEL_ID) != null) return
         val ch = NotificationChannel(CHANNEL_ID, "Canlı Bildirimler", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "Otobüs varış takibi ve namaz vakti geri sayımı gibi sürekli güncellenen bildirimler"
+            description = "Otobüs varış takibi, namaz vakti ve ders geri sayımı gibi sürekli güncellenen bildirimler"
             setSound(null, null)
             enableVibration(false)
             setShowBadge(false)
+            // Kilit ekranında "hassas içeriği gizle" açıkken de içerik görünsün (Samsung Now Bar kanal ayarına bakıyor)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
         nm.createNotificationChannel(ch)
     }
@@ -94,7 +114,26 @@ object LiveNotifications {
         )
     }
 
+    /**
+     * Bildirimi kurar ve kilit ekranı "hassas içeriği gizle" açıkken de içeriğin görünmesi için aynı içerikli
+     * bir publicVersion ekler. VISIBILITY_PUBLIC tek başına Samsung Now Bar'a yetmiyor: publicVersion yoksa
+     * kilit ekranındaki kapsülde yalnızca uygulama adı çıkıyor (One UI 8.5'te doğrulandı). İçerik zaten hassas
+     * değil (namaz vakti, ders, otobüs).
+     */
+    private fun broadcastIntent(context: Context, action: String): PendingIntent {
+        val i = Intent(context, LiveActionReceiver::class.java).apply { this.action = action }
+        return PendingIntent.getBroadcast(context, action.hashCode(), i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    /** Bir sonraki dakika sınırı (+0,5 sn): kalan-süre metni dakikada bir tazelenir (Samsung kronometreyi çizmiyor) */
+    private fun nextMinuteMs(nowMs: Long): Long = (nowMs / 60_000L + 1) * 60_000L + 500L
+
     fun build(context: Context, notifId: Int, spec: Spec): Notification {
+        val public = buildInner(context, notifId, spec)
+        return buildInner(context, notifId, spec, publicVersion = public)
+    }
+
+    private fun buildInner(context: Context, notifId: Int, spec: Spec, publicVersion: Notification? = null): Notification {
         ensureChannel(context)
         @Suppress("DEPRECATION")
         val builder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(context, CHANNEL_ID) else Notification.Builder(context))
@@ -108,6 +147,15 @@ object LiveNotifications {
 
         spec.subText?.let { builder.setSubText(it) }
         contentIntent(context, notifId, spec.deepLink)?.let { builder.setContentIntent(it) }
+        publicVersion?.let { builder.setPublicVersion(it) }
+        spec.actions.forEachIndexed { idx, a ->
+            val pi = when {
+                a.broadcast != null -> broadcastIntent(context, a.broadcast)
+                else -> contentIntent(context, notifId * 31 + idx + 1, a.deepLink)
+            } ?: return@forEachIndexed
+            val icon = android.graphics.drawable.Icon.createWithResource(context, smallIcon(context))
+            builder.addAction(Notification.Action.Builder(icon, a.label, pi).build())
+        }
 
         if (spec.chronometerEndMs != null) {
             builder.setWhen(spec.chronometerEndMs)
@@ -263,23 +311,226 @@ object LiveNotifications {
             context,
             PRAYER_NOTIF_ID,
             Spec(
-                title = "🕌 ${next.first} · ${next.second}",
+                title = "${next.first} · ${next.second}",
                 text = "Elazığ · ${prev.first} ${prev.second} → ${next.first} ${next.second}",
                 subText = "$remainingText kaldı",
-                shortText = next.first,
+                shortText = remainingText,
                 progress = progress,
                 chronometerEndMs = endCal.timeInMillis,
                 deepLink = "elazigsehir://brief",
+                actions = listOf(
+                    Action("Vakitler", deepLink = "elazigsehir://brief"),
+                    Action("Kapat", broadcast = ACTION_PRAYER_LIVE_OFF),
+                ),
             )
         )
 
-        // Bir sonraki yenileme: en geç 10 dk sonra, vakit girdiğinde ise hemen (+30 sn)
-        val nextTickMs = minOf(endCal.timeInMillis + 30_000L, System.currentTimeMillis() + 10 * 60_000L)
+        // Bir sonraki yenileme: dakika başında (kalan süre metni), vakit girdiğinde ise hemen (+30 sn)
+        val nowMs = System.currentTimeMillis()
+        scheduleTick(context, tickIntent(context), minOf(endCal.timeInMillis + 30_000L, nextMinuteMs(nowMs)))
+    }
+
+    /** Android 12+ : kullanıcı "Alarmlar ve hatırlatıcılar" iznini vermişse true (öncesinde her zaman true) */
+    fun canScheduleExact(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return try {
+            (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Samsung One UI'da "Kilitliyken içeriği gizle" (global) açıkken Now Bar üçüncü taraf kartlarda
+     * VISIBILITY_PUBLIC ve publicVersion'a bakmadan yalnızca uygulama adını gösterir (One UI 8.5'te doğrulandı).
+     * Kullanıcı bunu uygulama bazında "Her zaman göster" ile aşabilir; bu ayar uygulamadan okunamıyor,
+     * o yüzden yalnızca global ayarı raporlarız ve JS tarafı ipucunu bir kez gösterir.
+     */
+    fun lockscreenContentHidden(context: Context): Boolean {
+        if (!Build.MANUFACTURER.equals("samsung", ignoreCase = true)) return false
+        return try {
+            android.provider.Settings.Secure.getInt(context.contentResolver, "lock_screen_allow_private_notifications", 1) == 0
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    /** Uygulamanın bildirim ayarları sayfası (Samsung'da "Kilitliyken içeriği göster veya gizle" burada) */
+    fun openAppNotificationSettings(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return try {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    /** Sistem ayarlarındaki "Alarmlar ve hatırlatıcılar" sayfasını açar (Android 12+) */
+    fun openExactAlarmSettings(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+        return try {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Ders geçişleri / vakit girişleri dakika hassasiyeti ister: izin varsa exact alarm; yoksa
+     * setAndAllowWhileIdle'ın 1 saate varan penceresi yerine en fazla 10 dk pencereli setWindow.
+     */
+    private fun scheduleTick(context: Context, pi: PendingIntent, atMs: Long) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         try {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextTickMs, tickIntent(context))
+            if (canScheduleExact(context)) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, pi)
+            } else {
+                am.setWindow(AlarmManager.RTC_WAKEUP, atMs, 10 * 60_000L, pi)
+            }
         } catch (e: SecurityException) {
-            am.set(AlarmManager.RTC, nextTickMs, tickIntent(context))
+            am.setWindow(AlarmManager.RTC_WAKEUP, atMs, 10 * 60_000L, pi)
         }
+    }
+
+    // ─── Ders zili: şu anki / sıradaki ders (B6) ───────────────────────────────
+
+    private data class Lesson(val startMin: Int, val endMin: Int, val start: String, val end: String, val course: String, val room: String)
+
+    private val LESSON_ACTIONS = listOf(
+        Action("Program", deepLink = "elazigsehir://obs"),
+        Action("Kapat", broadcast = ACTION_LESSON_LIVE_OFF),
+    )
+
+    private fun lessonTickIntent(context: Context): PendingIntent {
+        val i = Intent(context, LessonLiveReceiver::class.java).apply { action = ACTION_LESSON_TICK }
+        return PendingIntent.getBroadcast(context, LESSON_NOTIF_ID, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    fun setLessonLiveEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_LESSON_LIVE, enabled).apply()
+        if (enabled) refreshLessonLive(context) else stopLessonLive(context)
+    }
+
+    fun isLessonLiveEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_LESSON_LIVE, false)
+
+    fun stopLessonLive(context: Context) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        am.cancel(lessonTickIntent(context))
+        cancel(context, LESSON_NOTIF_ID)
+    }
+
+    /** lessons_json içinden verilen günün (0=Pazartesi) derslerini başlangıç saatine göre sıralı döndürür */
+    private fun lessonsForDay(context: Context, dayIndex: Int): List<Lesson> {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LESSONS_JSON, null) ?: return emptyList()
+        return try {
+            val arr = org.json.JSONArray(raw)
+            val out = mutableListOf<Lesson>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                if (o.optInt("d", -1) != dayIndex) continue
+                val s = o.optString("s")
+                val e = o.optString("e")
+                val sm = parseHm(s) ?: continue
+                val em = parseHm(e) ?: (sm + 50)
+                out.add(Lesson(sm, em, s, e, o.optString("c").ifBlank { "Ders" }, o.optString("r")))
+            }
+            out.sortedBy { it.startMin }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun parseHm(v: String?): Int? {
+        val m = Regex("(\\d{1,2}):(\\d{2})").find(v ?: return null) ?: return null
+        return m.groupValues[1].toInt() * 60 + m.groupValues[2].toInt()
+    }
+
+    private fun atMinute(base: Calendar, minuteOfDay: Int): Long = (base.clone() as Calendar).apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+        add(Calendar.MINUTE, minuteOfDay)
+    }.timeInMillis
+
+    /**
+     * Günün programından şu anki dersi (ongoing kronometre, bitişe kadar) ya da LESSON_LEAD_MIN içinde
+     * başlayacak sıradaki dersi (başlangıca geri sayım) canlı bildirim olarak basar; ders geçişlerine
+     * ve gün sonuna alarm kurar. Program yoksa (yayınlanmamış / OBS hesabı yok) bildirim gösterilmez.
+     */
+    fun refreshLessonLive(context: Context) {
+        if (!isLessonLiveEnabled(context)) {
+            stopLessonLive(context)
+            return
+        }
+        val now = Calendar.getInstance()
+        val nowMin = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+        val dayIndex = (now.get(Calendar.DAY_OF_WEEK) + 5) % 7 // Pazartesi = 0
+        val lessons = lessonsForDay(context, dayIndex)
+        val pi = lessonTickIntent(context)
+        val nowMs = System.currentTimeMillis()
+
+        val current = lessons.firstOrNull { it.startMin <= nowMin && nowMin < it.endMin }
+        val next = lessons.firstOrNull { it.startMin > nowMin }
+
+        if (current != null) {
+            val span = (current.endMin - current.startMin).coerceAtLeast(1)
+            val progress = (((nowMin - current.startMin) * 100) / span).coerceIn(0, 100)
+            val nextText = if (next != null) {
+                " · sıradaki ${next.start} ${next.course}${if (next.room.isNotBlank()) " (${next.room})" else ""}"
+            } else " · günün son dersi"
+            post(
+                context, LESSON_NOTIF_ID,
+                Spec(
+                    title = "Şu an: ${current.course}",
+                    text = "${current.end}'e kadar${if (current.room.isNotBlank()) " · ${current.room}" else ""}$nextText",
+                    subText = "${current.endMin - nowMin} dk kaldı",
+                    shortText = "${current.endMin - nowMin} dk",
+                    progress = progress,
+                    chronometerEndMs = atMinute(now, current.endMin),
+                    deepLink = "elazigsehir://obs",
+                    actions = LESSON_ACTIONS,
+                )
+            )
+            scheduleTick(context, pi, minOf(atMinute(now, current.endMin) + 30_000L, nextMinuteMs(nowMs)))
+            return
+        }
+
+        if (next != null && next.startMin - nowMin <= LESSON_LEAD_MIN) {
+            val remaining = next.startMin - nowMin
+            val progress = (((LESSON_LEAD_MIN - remaining) * 100) / LESSON_LEAD_MIN).coerceIn(0, 100)
+            val after = lessons.firstOrNull { it.startMin > next.startMin }
+            post(
+                context, LESSON_NOTIF_ID,
+                Spec(
+                    title = "Sıradaki ders ${next.start} · ${next.course}",
+                    text = (if (next.room.isNotBlank()) "${next.room} · " else "") + "${next.start}–${next.end}" +
+                        (if (after != null) " · sonra ${after.start} ${after.course}" else ""),
+                    subText = "$remaining dk sonra başlıyor",
+                    shortText = "$remaining dk",
+                    progress = progress,
+                    chronometerEndMs = atMinute(now, next.startMin),
+                    deepLink = "elazigsehir://obs",
+                    actions = LESSON_ACTIONS,
+                )
+            )
+            scheduleTick(context, pi, minOf(atMinute(now, next.startMin) + 30_000L, nextMinuteMs(nowMs)))
+            return
+        }
+
+        // Ders yok ya da henüz uzak: bildirimi kaldır, ilk ilgili ana alarm kur
+        cancel(context, LESSON_NOTIF_ID)
+        val wakeMs = if (next != null) atMinute(now, next.startMin - LESSON_LEAD_MIN) else atMinute(now, 24 * 60 + 5)
+        scheduleTick(context, pi, maxOf(wakeMs, nowMs + 60_000L))
     }
 }
