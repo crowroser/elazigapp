@@ -10,6 +10,7 @@ import * as Notifications from 'expo-notifications';
 import { Theme, ThemeService, useAppTheme } from '@/constants/Theme';
 import { NotificationService } from '@/services/notificationService';
 import { WidgetService } from '@/services/widgetService';
+import { FiratUnitsService } from '@/services/firatUnitsService';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -63,12 +64,14 @@ export default function RootLayout() {
     // Initial sync
     NotificationService.syncAllSchedules().catch(() => {});
     WidgetService.syncWidgets().catch(() => {});
+    FiratUnitsService.flushPending().catch(() => {});
 
     // Periodic sync on app active
     const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
         NotificationService.syncAllSchedules().catch(() => {});
         WidgetService.syncWidgets().catch(() => {});
+        FiratUnitsService.flushPending().catch(() => {});
       }
     });
 
@@ -132,6 +135,7 @@ export default function RootLayout() {
           <Stack.Screen name="obs" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Hakkında' }} />
           <Stack.Screen name="notifications" options={{ headerShown: false }} />
+          <Stack.Screen name="firat-units" options={{ headerShown: false }} />
           <Stack.Screen name="widgets" options={{ title: 'Widget Önizleme' }} />
           <Stack.Screen name="brief" options={{ headerShown: false }} />
           <Stack.Screen name="classifieds" options={{ title: 'İlan Panosu' }} />
