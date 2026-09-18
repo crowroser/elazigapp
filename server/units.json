@@ -1,0 +1,2054 @@
+[
+  {
+    "topic": "firat_ddyo",
+    "sub": "ddyo",
+    "name": "DİJİTAL DÖNÜŞÜM ve YAZILIM OFİSİ KOORDİNATÖRLÜĞÜ",
+    "url": "https://ddyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yazmf",
+    "sub": "yazmf",
+    "name": "Yazılım Mühendisliği",
+    "url": "https://yazmf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sporbilimlerif",
+    "sub": "sporbilimlerif",
+    "name": "SPOR BİLİMLERİ FAKÜLTESİ",
+    "url": "https://sporbilimlerif.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kikoord",
+    "sub": "kikoord",
+    "name": "KURUMSAL İLETİŞİM KOORDİNATÖRLÜĞÜ",
+    "url": "https://kikoord.firat.edu.tr"
+  },
+  {
+    "topic": "firat_muhendislikf",
+    "sub": "muhendislikf",
+    "name": "MÜHENDİSLİK FAKÜLTESİ",
+    "url": "https://muhendislikf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_teknolojif",
+    "sub": "teknolojif",
+    "name": "TEKNOLOJİ FAKÜLTESİ",
+    "url": "https://teknolojif.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yazilimtf",
+    "sub": "yazilimtf",
+    "name": "Yazılım Mühendisliği",
+    "url": "https://yazilimtf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_egitimf",
+    "sub": "egitimf",
+    "name": "EĞİTİM FAKÜLTESİ",
+    "url": "https://egitimf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fenf",
+    "sub": "fenf",
+    "name": "FEN FAKÜLTESİ",
+    "url": "https://fenf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_iibf",
+    "sub": "iibf",
+    "name": "İKTİSADİ VE İDARİ BİLİMLER FAKÜLTESİ",
+    "url": "https://iibf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ilahiyatf",
+    "sub": "ilahiyatf",
+    "name": "İLAHİYAT FAKÜLTESİ",
+    "url": "https://ilahiyatf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_iletisimf",
+    "sub": "iletisimf",
+    "name": "İLETİŞİM FAKÜLTESİ",
+    "url": "https://iletisimf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_isbf",
+    "sub": "isbf",
+    "name": "İnsan ve Toplum Bilimleri Fakültesi",
+    "url": "https://isbf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mimarlikf",
+    "sub": "mimarlikf",
+    "name": "Mimarlık Fakültesi",
+    "url": "https://mimarlikf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_saglikf",
+    "sub": "saglikf",
+    "name": "SAĞLIK BİLİMLERİ FAKÜLTESİ",
+    "url": "https://saglikf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_suuf",
+    "sub": "suuf",
+    "name": "SU ÜRÜNLERİ FAKÜLTESİ",
+    "url": "https://suuf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tip",
+    "sub": "tip",
+    "name": "TIP FAKÜLTESİ",
+    "url": "https://tip.firat.edu.tr"
+  },
+  {
+    "topic": "firat_veterinerf",
+    "sub": "veterinerf",
+    "name": "VETERİNER FAKÜLTESİ",
+    "url": "https://veterinerf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kyo",
+    "sub": "kyo",
+    "name": "DEVLET KONSERVATUVARI",
+    "url": "https://kyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sivilhavacilik",
+    "sub": "sivilhavacilik",
+    "name": "SİVİL HAVACILIK YÜKSEKOKULU",
+    "url": "https://sivilhavacilik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yabancidiller",
+    "sub": "yabancidiller",
+    "name": "YABANCI DİLLER YÜKSEKOKULU",
+    "url": "https://yabancidiller.firat.edu.tr"
+  },
+  {
+    "topic": "firat_keban",
+    "sub": "keban",
+    "name": "KEBAN MESLEK YÜKSEKOKULU",
+    "url": "https://keban.firat.edu.tr"
+  },
+  {
+    "topic": "firat_karakocan",
+    "sub": "karakocan",
+    "name": "KARAKOÇAN MESLEK YÜKSEK OKULU",
+    "url": "https://karakocan.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fen",
+    "sub": "fen",
+    "name": "Fen Bilimleri Enstitüsü",
+    "url": "https://fen.firat.edu.tr"
+  },
+  {
+    "topic": "firat_eemtf",
+    "sub": "eemtf",
+    "name": "Elektrik Elektronik Mühendisliği",
+    "url": "https://eemtf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_baskil",
+    "sub": "baskil",
+    "name": "Baskil Meslek Yüksek Okulu",
+    "url": "https://baskil.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kovancilar",
+    "sub": "kovancilar",
+    "name": "Kovancılar Meslek Yüksek Okulu",
+    "url": "https://kovancilar.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sanayi",
+    "sub": "sanayi",
+    "name": "Elazığ Organize Sanayi Bölgesi Meslek Yüksekokulu",
+    "url": "https://sanayi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sivrice",
+    "sub": "sivrice",
+    "name": "Sivrice Meslek Yüksek Okulu",
+    "url": "https://sivrice.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sosyal",
+    "sub": "sosyal",
+    "name": "Sosyal Bilimler Enstitüsü",
+    "url": "https://sosyal.firat.edu.tr"
+  },
+  {
+    "topic": "firat_teknik",
+    "sub": "teknik",
+    "name": "Teknik Bilimler Meslek Yüksekokulu",
+    "url": "https://teknik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_disf",
+    "sub": "disf",
+    "name": "Diş Hekimliği Fakültesi",
+    "url": "https://disf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_saglik",
+    "sub": "saglik",
+    "name": "Sağlık Bilimleri Enstitüsü",
+    "url": "https://saglik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_egitim",
+    "sub": "egitim",
+    "name": "Eğitim Bilimleri Enstitüsü",
+    "url": "https://egitim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_saglikmyo",
+    "sub": "saglikmyo",
+    "name": "Sağlık Hizmetleri Meslek Yüksekokulu",
+    "url": "https://saglikmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sosyalmyo",
+    "sub": "sosyalmyo",
+    "name": "Sosyal Bilimler Meslek Yüksek Okulu",
+    "url": "https://sosyalmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_biyoloji",
+    "sub": "biyoloji",
+    "name": "Biyoloji Programı ve Moleküler Biyoloji ve Genetik Programı",
+    "url": "https://biyoloji.firat.edu.tr"
+  },
+  {
+    "topic": "firat_istatistik",
+    "sub": "istatistik",
+    "name": "İstatistik Bölümü",
+    "url": "https://istatistik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fizik",
+    "sub": "fizik",
+    "name": "Fizik Bölümü",
+    "url": "https://fizik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bilgisayarmf",
+    "sub": "bilgisayarmf",
+    "name": "Bilgisayar Mühendisliği",
+    "url": "https://bilgisayarmf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bmmf",
+    "sub": "bmmf",
+    "name": "Biyomühendislik",
+    "url": "https://bmmf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_insaatmf",
+    "sub": "insaatmf",
+    "name": "İnşaat Mühendisliği",
+    "url": "https://insaatmf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kimyamf",
+    "sub": "kimyamf",
+    "name": "Kimya Mühendisliği",
+    "url": "https://kimyamf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_abmtf",
+    "sub": "abmtf",
+    "name": "Adli Bilişim Mühendisliği",
+    "url": "https://abmtf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_insaattf",
+    "sub": "insaattf",
+    "name": "İnşaat Mühendisliği",
+    "url": "https://insaattf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mekatroniktf",
+    "sub": "mekatroniktf",
+    "name": "Mekatronik Mühendisliği",
+    "url": "https://mekatroniktf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mmtf",
+    "sub": "mmtf",
+    "name": "Metalurji ve Malzeme Mühendisliği",
+    "url": "https://mmtf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_makinamf",
+    "sub": "makinamf",
+    "name": "Makina Mühendisliği",
+    "url": "https://makinamf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_cb",
+    "sub": "cb",
+    "name": "Coğrafya Bölümü",
+    "url": "https://cb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sosyoloji",
+    "sub": "sosyoloji",
+    "name": "Sosyoloji Bölümü",
+    "url": "https://sosyoloji.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tarih",
+    "sub": "tarih",
+    "name": "Tarih Bölümü",
+    "url": "https://tarih.firat.edu.tr"
+  },
+  {
+    "topic": "firat_turkdiliedb",
+    "sub": "turkdiliedb",
+    "name": "Türk Dili ve Edebiyatı Bölümü",
+    "url": "https://turkdiliedb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mimarlik",
+    "sub": "mimarlik",
+    "name": "Mimarlık Bölümü",
+    "url": "https://mimarlik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bd",
+    "sub": "bd",
+    "name": "Beslenme ve Diyetetik Bölümü",
+    "url": "https://bd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ebe",
+    "sub": "ebe",
+    "name": "Ebelik Bölümü",
+    "url": "https://ebe.firat.edu.tr"
+  },
+  {
+    "topic": "firat_heeb",
+    "sub": "heeb",
+    "name": "Havacılık Elektrik ve Elektroniği Bölümü",
+    "url": "https://heeb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_htkb",
+    "sub": "htkb",
+    "name": "Hava Trafik Kontrolü Bölümü",
+    "url": "https://htkb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ubob",
+    "sub": "ubob",
+    "name": "Uçak Bakım ve Onarım Bölümü",
+    "url": "https://ubob.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mekatronikmf",
+    "sub": "mekatronikmf",
+    "name": "Mekatronik Mühendisliği",
+    "url": "https://mekatronikmf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_teabd",
+    "sub": "teabd",
+    "name": "Türkçe Eğitimi Ana Bilim Dalı",
+    "url": "https://teabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ydeb",
+    "sub": "ydeb",
+    "name": "Yabancı Diller Eğitimi Bölümü",
+    "url": "https://ydeb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_aktuerya",
+    "sub": "aktuerya",
+    "name": "Aktüerya Bölümü",
+    "url": "https://aktuerya.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kimya",
+    "sub": "kimya",
+    "name": "Kimya Bölümü",
+    "url": "https://kimya.firat.edu.tr"
+  },
+  {
+    "topic": "firat_matematik",
+    "sub": "matematik",
+    "name": "Matematik Bölümü",
+    "url": "https://matematik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ceeib",
+    "sub": "ceeib",
+    "name": "Çalışma Ekonomisi ve Endüstri İlişkileri Bölümü",
+    "url": "https://ceeib.firat.edu.tr"
+  },
+  {
+    "topic": "firat_iktisat",
+    "sub": "iktisat",
+    "name": "İktisat Bölümü",
+    "url": "https://iktisat.firat.edu.tr"
+  },
+  {
+    "topic": "firat_isg",
+    "sub": "isg",
+    "name": "İş Sağlığı ve Güvenliği Ana Bilim Dalı",
+    "url": "https://isg.firat.edu.tr"
+  },
+  {
+    "topic": "firat_isletme",
+    "sub": "isletme",
+    "name": "İşletme Bölümü",
+    "url": "https://isletme.firat.edu.tr"
+  },
+  {
+    "topic": "firat_maliye",
+    "sub": "maliye",
+    "name": "Maliye Bölümü",
+    "url": "https://maliye.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sagyon",
+    "sub": "sagyon",
+    "name": "Sağlık Yönetimi",
+    "url": "https://sagyon.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sbkyb",
+    "sub": "sbkyb",
+    "name": "Siyaset Bilimi ve Kamu Yönetimi Bölümü",
+    "url": "https://sbkyb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_shb",
+    "sub": "shb",
+    "name": "Sosyal Hizmet Bölümü",
+    "url": "https://shb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gazetecilik",
+    "sub": "gazetecilik",
+    "name": "Gazetecilik Bölümü",
+    "url": "https://gazetecilik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gorseliletisim",
+    "sub": "gorseliletisim",
+    "name": "Görsel İletişim Tasarımı",
+    "url": "https://gorseliletisim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_hitb",
+    "sub": "hitb",
+    "name": "Halkla İlişkiler ve Tanıtım",
+    "url": "https://hitb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_arkeoloji",
+    "sub": "arkeoloji",
+    "name": "Arkeoloji Bölümü",
+    "url": "https://arkeoloji.firat.edu.tr"
+  },
+  {
+    "topic": "firat_endustrimimarlik",
+    "sub": "endustrimimarlik",
+    "name": "Endüstri Ürünleri Tasarımı Bölümü",
+    "url": "https://endustrimimarlik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_icmimarlik",
+    "sub": "icmimarlik",
+    "name": "İç Mimarlık Bölümü",
+    "url": "https://icmimarlik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_peyzajmimarlik",
+    "sub": "peyzajmimarlik",
+    "name": "Peyzaj Mimarisi",
+    "url": "https://peyzajmimarlik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_planlamamimarlik",
+    "sub": "planlamamimarlik",
+    "name": "Şehir ve Bölge Planlama Bölümü",
+    "url": "https://planlamamimarlik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_cevremf",
+    "sub": "cevremf",
+    "name": "Çevre Mühendisliği",
+    "url": "https://cevremf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_eemmf",
+    "sub": "eemmf",
+    "name": "Elektrik Elektronik Mühendisliği",
+    "url": "https://eemmf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_geomatikmf",
+    "sub": "geomatikmf",
+    "name": "Jeodezi ve Fotogrametri (Geomatik) Mühendisliği",
+    "url": "https://geomatikmf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_jeolojimf",
+    "sub": "jeolojimf",
+    "name": "Jeoloji Mühendisliği",
+    "url": "https://jeolojimf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mmmf",
+    "sub": "mmmf",
+    "name": "Metalurji ve Malzeme Mühendisliği",
+    "url": "https://mmmf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_entf",
+    "sub": "entf",
+    "name": "Enerji Sistemleri Mühendisliği",
+    "url": "https://entf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ftr",
+    "sub": "ftr",
+    "name": "Fizyoterapi ve Rehabilitasyon",
+    "url": "https://ftr.firat.edu.tr"
+  },
+  {
+    "topic": "firat_hemsirelik",
+    "sub": "hemsirelik",
+    "name": "Hemşirelik Bölümü",
+    "url": "https://hemsirelik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bote",
+    "sub": "bote",
+    "name": "Bilgisayar ve Öğretim Teknolojileri Eğitimi Bölümü",
+    "url": "https://bote.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ebb",
+    "sub": "ebb",
+    "name": "Eğitim Bilimleri Bölümü",
+    "url": "https://ebb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gseb",
+    "sub": "gseb",
+    "name": "Güzel Sanatlar Eğitimi Bölümü Resim-İş Öğretmenliği Bölümü",
+    "url": "https://gseb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_iob",
+    "sub": "iob",
+    "name": "İlköğretim Bölümü",
+    "url": "https://iob.firat.edu.tr"
+  },
+  {
+    "topic": "firat_imo",
+    "sub": "imo",
+    "name": "İlköğretim Matematik Öğretmenliği",
+    "url": "https://imo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mfbeb",
+    "sub": "mfbeb",
+    "name": "Matematik ve Fen Bilimleri Eğitimi Bölümü",
+    "url": "https://mfbeb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ooe",
+    "sub": "ooe",
+    "name": "Okul Öncesi Eğitimi Ana Bilim Dalı",
+    "url": "https://ooe.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ofmb",
+    "sub": "ofmb",
+    "name": "Ortaöğretim Fen ve Matematik Alanları Bölümü",
+    "url": "https://ofmb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_eb",
+    "sub": "eb",
+    "name": "Enformatik Bölümü",
+    "url": "https://eb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_turkdili",
+    "sub": "turkdili",
+    "name": "Türk Dili Bölümü",
+    "url": "https://turkdili.firat.edu.tr"
+  },
+  {
+    "topic": "firat_imt",
+    "sub": "imt",
+    "name": "İngilizce Mütercim-Tercümanlık Bölümü",
+    "url": "https://imt.firat.edu.tr"
+  },
+  {
+    "topic": "firat_eyabd",
+    "sub": "eyabd",
+    "name": "Eğitim Yönetimi Ana Bilim Dalı",
+    "url": "https://eyabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fbeabd",
+    "sub": "fbeabd",
+    "name": "Fen Bilimleri Eğitimi Ana Bilim Dalı",
+    "url": "https://fbeabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_soabd",
+    "sub": "soabd",
+    "name": "Sınıf Eğitimi Anabilim Dalı",
+    "url": "https://soabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_eod",
+    "sub": "eod",
+    "name": "Eğitimde Ölçme ve Değerlendirme Anabilim Dalı",
+    "url": "https://eod.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ydebegitimf",
+    "sub": "ydebegitimf",
+    "name": "Yabancı Diller Eğitimi Bölümü",
+    "url": "https://ydebegitimf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_radyotv",
+    "sub": "radyotv",
+    "name": "Radyo-Televizyon ve Sinema Bölümü",
+    "url": "https://radyotv.firat.edu.tr"
+  },
+  {
+    "topic": "firat_teb",
+    "sub": "teb",
+    "name": "Temel Eğitim Bölümü",
+    "url": "https://teb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_teabdegitimf",
+    "sub": "teabdegitimf",
+    "name": "Türkçe Eğitimi Ana Bilim Dalı",
+    "url": "https://teabdegitimf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tsbb",
+    "sub": "tsbb",
+    "name": "Türkçe ve Sosyal Bilimler Eğitimi Bölümü",
+    "url": "https://tsbb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sbeabd",
+    "sub": "sbeabd",
+    "name": "Sosyal Bilgiler Eğitimi Ana Bilim Dalı",
+    "url": "https://sbeabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yabem",
+    "sub": "yabem",
+    "name": "Yapı ve Beton Uygulama ve Araştırma Merkezi (YABEM)",
+    "url": "https://yabem.firat.edu.tr"
+  },
+  {
+    "topic": "firat_aeb",
+    "sub": "aeb",
+    "name": "Antrenörlük Eğitimi Bölümü",
+    "url": "https://aeb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_beso",
+    "sub": "beso",
+    "name": "Beden Eğitimi ve Spor Öğretmenliği Bölümü",
+    "url": "https://beso.firat.edu.tr"
+  },
+  {
+    "topic": "firat_rek",
+    "sub": "rek",
+    "name": "Rekreasyon Bölümü",
+    "url": "https://rek.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sy",
+    "sub": "sy",
+    "name": "Spor Yöneticiliği Bölümü",
+    "url": "https://sy.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yonbil",
+    "sub": "yonbil",
+    "name": "Yönetim Bilişim Sistemleri",
+    "url": "https://yonbil.firat.edu.tr"
+  },
+  {
+    "topic": "firat_makinatf",
+    "sub": "makinatf",
+    "name": "Makina Mühendisliği",
+    "url": "https://makinatf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_covid",
+    "sub": "covid",
+    "name": "COVID 19",
+    "url": "https://covid.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ekobilisimabd",
+    "sub": "ekobilisimabd",
+    "name": "Ekobilişim Ana Bilim Dalı",
+    "url": "https://ekobilisimabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yazilimmuholp",
+    "sub": "yazilimmuholp",
+    "name": "Yazılım Mühendisliği Uluslararası Ortak Lisans Programı",
+    "url": "https://yazilimmuholp.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kadincalismalarimer",
+    "sub": "kadincalismalarimer",
+    "name": "Fırat Üniversitesi Kadın ve Aile Çalışmaları Uygulama ve Araştırma Merkezi",
+    "url": "https://kadincalismalarimer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_deneyselarastirmamer",
+    "sub": "deneyselarastirmamer",
+    "name": "Deneysel Araştırma Merkezi",
+    "url": "https://deneyselarastirmamer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_u",
+    "sub": "u",
+    "name": "Fırat Üniversitesi Uzaktan Eğitim Merkezi",
+    "url": "https://u.firat.edu.tr"
+  },
+  {
+    "topic": "firat_akademikyazmamer",
+    "sub": "akademikyazmamer",
+    "name": "Akademik Yazma Uygulama ve Araştırma Merkezi",
+    "url": "https://akademikyazmamer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_baum",
+    "sub": "baum",
+    "name": "Bilgisayar Bilimleri Araştırma ve Uygulama Merkezi",
+    "url": "https://baum.firat.edu.tr"
+  },
+  {
+    "topic": "firat_dismer",
+    "sub": "dismer",
+    "name": "Fırat Üniversitesi Ağız ve Diş Sağlığı Hastanesi",
+    "url": "https://dismer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_engellimer",
+    "sub": "engellimer",
+    "name": "Engelsiz Yaşam Uygulama ve Araştırma Merkezi",
+    "url": "https://engellimer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_engelsizmer",
+    "sub": "engelsizmer",
+    "name": "Engelliler Araştırma ve Uygulama Merkezi",
+    "url": "https://engelsizmer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_turkceogretimimer",
+    "sub": "turkceogretimimer",
+    "name": "Türkçe Öğretimi Uygulama ve Araştırma Merkezi",
+    "url": "https://turkceogretimimer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tarimhayvancilikmer",
+    "sub": "tarimhayvancilikmer",
+    "name": "Tarım ve Hayvancılık Araştırma ve Uygulama Merkezi",
+    "url": "https://tarimhayvancilikmer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kariyermer",
+    "sub": "kariyermer",
+    "name": "Kariyer Planlama Uygulama ve Araştırma Merkezi",
+    "url": "https://kariyermer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bilgiedinme",
+    "sub": "bilgiedinme",
+    "name": "F.Ü. Bilgi Edinme Birimi",
+    "url": "https://bilgiedinme.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ctleb",
+    "sub": "ctleb",
+    "name": "Çağdaş Türk Lehçeleri ve Edebiyatları Bölümü",
+    "url": "https://ctleb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gsekreterlik",
+    "sub": "gsekreterlik",
+    "name": "Genel Sekreterlik",
+    "url": "https://gsekreterlik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bilgiislemdb",
+    "sub": "bilgiislemdb",
+    "name": "Bilgi İşlem Daire Başkanlığı",
+    "url": "https://bilgiislemdb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sksdab",
+    "sub": "sksdab",
+    "name": "Sağlık Kültür ve Spor Daire Başkanlığı",
+    "url": "https://sksdab.firat.edu.tr"
+  },
+  {
+    "topic": "firat_imdb",
+    "sub": "imdb",
+    "name": "İdari ve Mali İşler Daire Başkanlığı",
+    "url": "https://imdb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kutuphanedb",
+    "sub": "kutuphanedb",
+    "name": "Kütüphane ve Dokümantasyon Daire Başkanlığı",
+    "url": "https://kutuphanedb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ogrencidb",
+    "sub": "ogrencidb",
+    "name": "Öğrenci İşleri Daire Başkanlığı",
+    "url": "https://ogrencidb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_personeldb",
+    "sub": "personeldb",
+    "name": "Personel Daire Başkanlığı",
+    "url": "https://personeldb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_stratejidb",
+    "sub": "stratejidb",
+    "name": "Strateji Geliştirme Daire Başkanlığı",
+    "url": "https://stratejidb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yapidb",
+    "sub": "yapidb",
+    "name": "Yapı İşleri Daire Başkanlığı",
+    "url": "https://yapidb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ihakurs",
+    "sub": "ihakurs",
+    "name": "İHA Pilotluk",
+    "url": "https://ihakurs.firat.edu.tr"
+  },
+  {
+    "topic": "firat_epoabd",
+    "sub": "epoabd",
+    "name": "Eğitim Programları ve Öğretim Anabilim Dalı",
+    "url": "https://epoabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_pdrabd",
+    "sub": "pdrabd",
+    "name": "Psikolojik Danışma ve Rehberlik Anabilim Dalı",
+    "url": "https://pdrabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_otomotivmf",
+    "sub": "otomotivmf",
+    "name": "Otomotiv Mühendisliği Bölümü",
+    "url": "https://otomotivmf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_basin",
+    "sub": "basin",
+    "name": "Basın Yayın Müdürlüğü",
+    "url": "https://basin.firat.edu.tr"
+  },
+  {
+    "topic": "firat_guvenlik",
+    "sub": "guvenlik",
+    "name": "Güvenlik Şube Müdürlüğü",
+    "url": "https://guvenlik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_hukukkoord",
+    "sub": "hukukkoord",
+    "name": "Hukuk Müşavirliği Koordinatörlüğü",
+    "url": "https://hukukkoord.firat.edu.tr"
+  },
+  {
+    "topic": "firat_disiliskilerkoord",
+    "sub": "disiliskilerkoord",
+    "name": "Erasmus+ Kurum Koordinatörlüğü",
+    "url": "https://disiliskilerkoord.firat.edu.tr"
+  },
+  {
+    "topic": "firat_oypkoord",
+    "sub": "oypkoord",
+    "name": "F.Ü. ÖYP Koordinatörlüğü",
+    "url": "https://oypkoord.firat.edu.tr"
+  },
+  {
+    "topic": "firat_osymkoord",
+    "sub": "osymkoord",
+    "name": "F.Ü. ÖSYM Koordinatörlüğü",
+    "url": "https://osymkoord.firat.edu.tr"
+  },
+  {
+    "topic": "firat_icdenetim",
+    "sub": "icdenetim",
+    "name": "İç Denetim Birimi Başkanlığı",
+    "url": "https://icdenetim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kalitekoord",
+    "sub": "kalitekoord",
+    "name": "Fırat Üniversitesi Kalite Koordinatörlüğü",
+    "url": "https://kalitekoord.firat.edu.tr"
+  },
+  {
+    "topic": "firat_projekoord",
+    "sub": "projekoord",
+    "name": "Proje Koordinasyon ve Danışmanlık Merkezi",
+    "url": "https://projekoord.firat.edu.tr"
+  },
+  {
+    "topic": "firat_asfaltgunleri",
+    "sub": "asfaltgunleri",
+    "name": "Asfalt Günleri Çalıştayı",
+    "url": "https://asfaltgunleri.firat.edu.tr"
+  },
+  {
+    "topic": "firat_hayvanhastanesi",
+    "sub": "hayvanhastanesi",
+    "name": "Hayvan Hastanesi",
+    "url": "https://hayvanhastanesi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bdeb",
+    "sub": "bdeb",
+    "name": "Batı Dilleri ve Edebiyatları Bölümü",
+    "url": "https://bdeb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sanattarihi",
+    "sub": "sanattarihi",
+    "name": "Sanat Tarihi Bölümü",
+    "url": "https://sanattarihi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sdk",
+    "sub": "sdk",
+    "name": "Salgın Danışma Komisyonu",
+    "url": "https://sdk.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mevlana",
+    "sub": "mevlana",
+    "name": "Mevlana Değişim Programı",
+    "url": "https://mevlana.firat.edu.tr"
+  },
+  {
+    "topic": "firat_farabi",
+    "sub": "farabi",
+    "name": "Farabi Değişim Programı",
+    "url": "https://farabi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_etikkurullar",
+    "sub": "etikkurullar",
+    "name": "Etik Kurullar",
+    "url": "https://etikkurullar.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sosyaltesisler",
+    "sub": "sosyaltesisler",
+    "name": "Sosyal Tesisler İktisadi İşletmesi",
+    "url": "https://sosyaltesisler.firat.edu.tr"
+  },
+  {
+    "topic": "firat_unievi",
+    "sub": "unievi",
+    "name": "Üniversite Evi",
+    "url": "https://unievi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_karakocanyurt",
+    "sub": "karakocanyurt",
+    "name": "Karakoçan Yurt",
+    "url": "https://karakocanyurt.firat.edu.tr"
+  },
+  {
+    "topic": "firat_uos",
+    "sub": "uos",
+    "name": "Uluslararası Öğrenci Sınavı",
+    "url": "https://uos.firat.edu.tr"
+  },
+  {
+    "topic": "firat_harputickalekazilari",
+    "sub": "harputickalekazilari",
+    "name": "Harput İç Kale Kazıları",
+    "url": "https://harputickalekazilari.firat.edu.tr"
+  },
+  {
+    "topic": "firat_enstituler",
+    "sub": "enstituler",
+    "name": "Enstitüler Sayfası",
+    "url": "https://enstituler.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yazokuluyeni",
+    "sub": "yazokuluyeni",
+    "name": "Yaz Okulu",
+    "url": "https://yazokuluyeni.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yerbilimleri",
+    "sub": "yerbilimleri",
+    "name": "Yerbilimleri Uygulama ve Araştırma Merkezi",
+    "url": "https://yerbilimleri.firat.edu.tr"
+  },
+  {
+    "topic": "firat_harputmer",
+    "sub": "harputmer",
+    "name": "Harput Uygulama ve Araştırma Merkezi",
+    "url": "https://harputmer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ocbhsemp",
+    "sub": "ocbhsemp",
+    "name": "Obezite Cerrahisi Bakımında Güncel Yaklaşımlar Sempozyumu",
+    "url": "https://ocbhsemp.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tok2022",
+    "sub": "tok2022",
+    "name": "Otomatik Kontrol Türk Milli Komitesi Ulusal Kongresi",
+    "url": "https://tok2022.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tv",
+    "sub": "tv",
+    "name": "Fırat TV",
+    "url": "https://tv.firat.edu.tr"
+  },
+  {
+    "topic": "firat_islamvemedeniyet",
+    "sub": "islamvemedeniyet",
+    "name": "İSLAM VE MEDENİYET SEMPOZYUMU",
+    "url": "https://islamvemedeniyet.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kvkk",
+    "sub": "kvkk",
+    "name": "Kişisel Verilerin Korunması",
+    "url": "https://kvkk.firat.edu.tr"
+  },
+  {
+    "topic": "firat_hemegitimdonusum_etk",
+    "sub": "hemegitimdonusum.etk",
+    "name": "Hemşirelik Eğitiminde Dönüşüm Sempozyumu",
+    "url": "https://hemegitimdonusum.etk.firat.edu.tr"
+  },
+  {
+    "topic": "firat_iso",
+    "sub": "iso",
+    "name": "ULUSLARARASI ÖĞRENCİ OFİSİ",
+    "url": "https://iso.firat.edu.tr"
+  },
+  {
+    "topic": "firat_emat4005proje",
+    "sub": "emat4005proje",
+    "name": "EMAT4005",
+    "url": "https://emat4005proje.firat.edu.tr"
+  },
+  {
+    "topic": "firat_iceriktasarimi",
+    "sub": "iceriktasarimi",
+    "name": "İçerik Tasarımı",
+    "url": "https://iceriktasarimi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_degerproje",
+    "sub": "degerproje",
+    "name": "Değer Proje",
+    "url": "https://degerproje.firat.edu.tr"
+  },
+  {
+    "topic": "firat_nitelarastirma",
+    "sub": "nitelarastirma",
+    "name": "Nitel Araştırma",
+    "url": "https://nitelarastirma.firat.edu.tr"
+  },
+  {
+    "topic": "firat_olcekgelistirme",
+    "sub": "olcekgelistirme",
+    "name": "Ölçek Geliştirme",
+    "url": "https://olcekgelistirme.firat.edu.tr"
+  },
+  {
+    "topic": "firat_iklimcevremer",
+    "sub": "iklimcevremer",
+    "name": "İKLİM DEĞİŞİKLİĞİ, ÇEVRE VE YEŞİL KALKINMA UYGULAMA VE ARAŞTIRMA MERKEZİ",
+    "url": "https://iklimcevremer.firat.edu.tr"
+  },
+  {
+    "topic": "firat_eczacilikf",
+    "sub": "eczacilikf",
+    "name": "ECZACILIK FAKÜLTESİ",
+    "url": "https://eczacilikf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_dafzsurguerkenek",
+    "sub": "dafzsurguerkenek",
+    "name": "DOĞU ANADOLU FAY ZONU'NUN ERKENEK VE SÜRGÜ SEGMENTLERİNİN DEPREM DAVRANIŞI",
+    "url": "https://dafzsurguerkenek.firat.edu.tr"
+  },
+  {
+    "topic": "firat_rai",
+    "sub": "rai",
+    "name": "Robotik ve Yapay Zeka Laboratuvarı (RAI)",
+    "url": "https://rai.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gyysosyal",
+    "sub": "gyysosyal",
+    "name": "Girişimcilik ve Yenilik Yönetimi Anabilim Dalı",
+    "url": "https://gyysosyal.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tbysosyal",
+    "sub": "tbysosyal",
+    "name": "Teknoloji ve Bilgi Yönetimi Anabilim Dalı",
+    "url": "https://tbysosyal.firat.edu.tr"
+  },
+  {
+    "topic": "firat_akyabd",
+    "sub": "akyabd",
+    "name": "Afet ve Kriz Yönetimi Anabilim Dalı",
+    "url": "https://akyabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mezuniyet2022",
+    "sub": "mezuniyet2022",
+    "name": "Mezuniyet 2022",
+    "url": "https://mezuniyet2022.firat.edu.tr"
+  },
+  {
+    "topic": "firat_2237yapayzeka",
+    "sub": "2237yapayzeka",
+    "name": "YAPAY ZEKA",
+    "url": "https://2237yapayzeka.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kayt",
+    "sub": "kayt",
+    "name": "Karşılıklı Anlaşılabilirlik Yöntem ve Teknikleri",
+    "url": "https://kayt.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ivsa",
+    "sub": "ivsa",
+    "name": "Uluslararası Veteriner Öğrencileri Topluluğu (IVSA Elazığ)",
+    "url": "https://ivsa.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tef",
+    "sub": "tef",
+    "name": "Teknik Eğitim Fakültesi",
+    "url": "https://tef.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ebysyardim",
+    "sub": "ebysyardim",
+    "name": "EBYS YARDIM WEB SAYFASI",
+    "url": "https://ebysyardim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ogrencidekanligi",
+    "sub": "ogrencidekanligi",
+    "name": "ÖĞRENCİ KOORDİNATÖRLÜĞÜ",
+    "url": "https://ogrencidekanligi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_code23",
+    "sub": "code23",
+    "name": "Code-23 FIRAT YAZILIM ATÖLYESİ",
+    "url": "https://code23.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fuzem",
+    "sub": "fuzem",
+    "name": "Fırat Üniversitesi Uzaktan Eğitim Merkezi",
+    "url": "https://fuzem.firat.edu.tr"
+  },
+  {
+    "topic": "firat_pfe",
+    "sub": "pfe",
+    "name": "PEDAGOJİK FORMASYON EĞİTİMİ",
+    "url": "https://pfe.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sumf",
+    "sub": "sumf",
+    "name": "Su Ürünleri Mühendisliği",
+    "url": "https://sumf.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ardek",
+    "sub": "ardek",
+    "name": "Fırat Üniversitesi Araştırma Koordinatörlüğü",
+    "url": "https://ardek.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ekom",
+    "sub": "ekom",
+    "name": "Eğitim Komisyonu",
+    "url": "https://ekom.firat.edu.tr"
+  },
+  {
+    "topic": "firat_alman",
+    "sub": "alman",
+    "name": "Alman Dili ve Edebiyatı",
+    "url": "https://alman.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ingiliz",
+    "sub": "ingiliz",
+    "name": "İngiliz Dili ve Edebiyatı",
+    "url": "https://ingiliz.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fransiz",
+    "sub": "fransiz",
+    "name": "Fransız Dili ve Edebiyatı",
+    "url": "https://fransiz.firat.edu.tr"
+  },
+  {
+    "topic": "firat_biyotek",
+    "sub": "biyotek",
+    "name": "Biyoteknoloji Anabilim Dalı",
+    "url": "https://biyotek.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fusim",
+    "sub": "fusim",
+    "name": "Fırat Üniversitesi Sanayi İşbirliği Merkezi",
+    "url": "https://fusim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_elektroteknoloji",
+    "sub": "elektroteknoloji",
+    "name": "Fırat Üniversitesi Elektro Teknoloji Öğrenci Topluluğu",
+    "url": "https://elektroteknoloji.firat.edu.tr"
+  },
+  {
+    "topic": "firat_futek",
+    "sub": "futek",
+    "name": "Fırat Üniversitesi Teknoloji Öğrenci Topluluğu",
+    "url": "https://futek.firat.edu.tr"
+  },
+  {
+    "topic": "firat_futag",
+    "sub": "futag",
+    "name": "Fırat Üniversitesi Teknoloji Ar-Ge ve Girişimcilik Öğrenci Topluluğu",
+    "url": "https://futag.firat.edu.tr"
+  },
+  {
+    "topic": "firat_rehberogrenci",
+    "sub": "rehberogrenci",
+    "name": "Rehber Öğrenci Topluluğu",
+    "url": "https://rehberogrenci.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ftrtoplulugu",
+    "sub": "ftrtoplulugu",
+    "name": "Fizyoterapi ve Rehabilitasyon Öğrenci Topluluğu",
+    "url": "https://ftrtoplulugu.firat.edu.tr"
+  },
+  {
+    "topic": "firat_shefk",
+    "sub": "shefk",
+    "name": "Sosyal Hizmet Etkileşim ve Farkındalık Öğrenci Topluluğu",
+    "url": "https://shefk.firat.edu.tr"
+  },
+  {
+    "topic": "firat_erasmustoplulugu",
+    "sub": "erasmustoplulugu",
+    "name": "Erasmus Öğrenci Topluluğu",
+    "url": "https://erasmustoplulugu.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gencgirisimciler",
+    "sub": "gencgirisimciler",
+    "name": "Genç Girişimciler Öğrenci Topluluğu",
+    "url": "https://gencgirisimciler.firat.edu.tr"
+  },
+  {
+    "topic": "firat_siberguvenlik",
+    "sub": "siberguvenlik",
+    "name": "Fırat Üniversitesi Siber Güvenlik Öğrecni Topluluğu",
+    "url": "https://siberguvenlik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sinifegitimi",
+    "sub": "sinifegitimi",
+    "name": "Sınıf Eğitimi Öğrenci Topluluğu",
+    "url": "https://sinifegitimi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tiyatro",
+    "sub": "tiyatro",
+    "name": "Fırat Üniversitesi Tiyatro Öğrenci Topluluğu",
+    "url": "https://tiyatro.firat.edu.tr"
+  },
+  {
+    "topic": "firat_genetik",
+    "sub": "genetik",
+    "name": "Biyoloji / Moleküler Biyoloji ve Genetik Öğrenci Topluluğu",
+    "url": "https://genetik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fumm",
+    "sub": "fumm",
+    "name": "Makine Mühendisliği Öğrenci Topluluğu",
+    "url": "https://fumm.firat.edu.tr"
+  },
+  {
+    "topic": "firat_kst",
+    "sub": "kst",
+    "name": "Kitap Severler Öğrenci Topluluğu",
+    "url": "https://kst.firat.edu.tr"
+  },
+  {
+    "topic": "firat_adlibilisim",
+    "sub": "adlibilisim",
+    "name": "Adli Bilişim Öğrenci Topluluğu",
+    "url": "https://adlibilisim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gdsc",
+    "sub": "gdsc",
+    "name": "Google Developer Students Club Fırat University",
+    "url": "https://gdsc.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fuvet",
+    "sub": "fuvet",
+    "name": "Fırat Üniversitesi Veteriner Fakültesi Öğrenci Topluluğu",
+    "url": "https://fuvet.firat.edu.tr"
+  },
+  {
+    "topic": "firat_havacilikuzay",
+    "sub": "havacilikuzay",
+    "name": "Fırat Üniversitesi Havacılık ve Uzay Teknolojileri Öğrenci Topluluğu",
+    "url": "https://havacilikuzay.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fudans",
+    "sub": "fudans",
+    "name": "Fırat Üniversitesi Dans Öğrenci Topluluğu",
+    "url": "https://fudans.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ieee",
+    "sub": "ieee",
+    "name": "Institute of Electrical and Electronics Engineers Öğrenci Topluluğu",
+    "url": "https://ieee.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ideall",
+    "sub": "ideall",
+    "name": "İngiliz Dili ve Edebiyatı Öğrenci Topluluğu",
+    "url": "https://ideall.firat.edu.tr"
+  },
+  {
+    "topic": "firat_acm",
+    "sub": "acm",
+    "name": "ACM Fırat Öğrenci Topluluğu",
+    "url": "https://acm.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yabancidil",
+    "sub": "yabancidil",
+    "name": "Yabancı Dil Öğrenci Topluluğu",
+    "url": "https://yabancidil.firat.edu.tr"
+  },
+  {
+    "topic": "firat_aid",
+    "sub": "aid",
+    "name": "Uluslararası Doktorlar Birliği Öğrenci Topluluğu",
+    "url": "https://aid.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sosyalhekimler",
+    "sub": "sosyalhekimler",
+    "name": "Sosyal Hekimler Öğrenci Topluluğu",
+    "url": "https://sosyalhekimler.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fuhak",
+    "sub": "fuhak",
+    "name": "Havacılık Öğrenci Topluluğu",
+    "url": "https://fuhak.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sosyalarge",
+    "sub": "sosyalarge",
+    "name": "Sosyal Ar-Ge Öğrenci Topluluğu",
+    "url": "https://sosyalarge.firat.edu.tr"
+  },
+  {
+    "topic": "firat_hsd",
+    "sub": "hsd",
+    "name": "Huawei Geliştirici Öğrenciler Öğrenci Topluluğu",
+    "url": "https://hsd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fukat",
+    "sub": "fukat",
+    "name": "Kalite Öğrenci Topluluğu",
+    "url": "https://fukat.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fustat",
+    "sub": "fustat",
+    "name": "Sosyal Bilimlerde Teknoloji ve Araştırma Öğrenci Topluluğu",
+    "url": "https://fustat.firat.edu.tr"
+  },
+  {
+    "topic": "firat_adem",
+    "sub": "adem",
+    "name": "Akademik Düşünce Eğitim Medeniyet Öğrenci Topluluğu",
+    "url": "https://adem.firat.edu.tr"
+  },
+  {
+    "topic": "firat_vetbak",
+    "sub": "vetbak",
+    "name": "Veterinerlik Bilimsel Araştırma Yayın Öğrenci Topluluğu",
+    "url": "https://vetbak.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sahavet",
+    "sub": "sahavet",
+    "name": "Saha Veteriner Hekimliği Öğrenci Topluluğu",
+    "url": "https://sahavet.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tht",
+    "sub": "tht",
+    "name": "Tıbbi Hizmetler ve Teknikerler Öğrenci Topluluğu",
+    "url": "https://tht.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gezitur",
+    "sub": "gezitur",
+    "name": "Gezi ve Turizm Öğrenci Topluluğu",
+    "url": "https://gezitur.firat.edu.tr"
+  },
+  {
+    "topic": "firat_febitek",
+    "sub": "febitek",
+    "name": "FEBİTEK",
+    "url": "https://febitek.firat.edu.tr"
+  },
+  {
+    "topic": "firat_2237akademikgelisim",
+    "sub": "2237akademikgelisim",
+    "name": "BİDEB 2237-A Akademide Dijital Araçlar ve Akademik Gelişim Sezon 2",
+    "url": "https://2237akademikgelisim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yzvm",
+    "sub": "yzvm",
+    "name": "Yapay Zeka ve Veri Mühendisliği",
+    "url": "https://yzvm.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tib",
+    "sub": "tib",
+    "name": "Temel İslam Bilimleri Bölümü",
+    "url": "https://tib.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fdb",
+    "sub": "fdb",
+    "name": "Felsefe ve Din Bilimleri Bölümü",
+    "url": "https://fdb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_itsb",
+    "sub": "itsb",
+    "name": "İslam Tarihi ve Sanatları Bölümü",
+    "url": "https://itsb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ecad",
+    "sub": "ecad",
+    "name": "Erken Çocuklukta Ahlak ve Değerler Eğitimi",
+    "url": "https://ecad.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yzgii",
+    "sub": "yzgii",
+    "name": "Yapay Zeka, Görüntü İşleme ve İnovasyon Öğrenci Topluluğu",
+    "url": "https://yzgii.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ukom",
+    "sub": "ukom",
+    "name": "UKOM",
+    "url": "https://ukom.firat.edu.tr"
+  },
+  {
+    "topic": "firat_usbtjournal",
+    "sub": "usbtjournal",
+    "name": "Uzay, Savunma ve Bilişim Teknolojileri Dergisi",
+    "url": "https://usbtjournal.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sinefi",
+    "sub": "sinefi",
+    "name": "Fırat Sinefi Öğrenci Topluluğu",
+    "url": "https://sinefi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_stnm",
+    "sub": "stnm",
+    "name": "Savunma Teknolojileri ve Nitelikli Mühendisler",
+    "url": "https://stnm.firat.edu.tr"
+  },
+  {
+    "topic": "firat_satranc",
+    "sub": "satranc",
+    "name": "Fırat Üniversitesi Satranç Öğrenci Topluluğu",
+    "url": "https://satranc.firat.edu.tr"
+  },
+  {
+    "topic": "firat_firattob",
+    "sub": "firattob",
+    "name": "TURKMSIC-Fırat Öğrenci Topluluğu",
+    "url": "https://firattob.firat.edu.tr"
+  },
+  {
+    "topic": "firat_darulhadis",
+    "sub": "darulhadis",
+    "name": "Dâru'l-Hadis Öğrenci Topluluğu",
+    "url": "https://darulhadis.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ytt",
+    "sub": "ytt",
+    "name": "Yapı - Tasarım Öğrenci Topluluğu",
+    "url": "https://ytt.firat.edu.tr"
+  },
+  {
+    "topic": "firat_blockchain",
+    "sub": "blockchain",
+    "name": "Fırat Blockchain Öğrenci Topluluğu",
+    "url": "https://blockchain.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fupsa",
+    "sub": "fupsa",
+    "name": "Eczacılık Öğrenci Topluluğu",
+    "url": "https://fupsa.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yesilay",
+    "sub": "yesilay",
+    "name": "Genç Yeşilay",
+    "url": "https://yesilay.firat.edu.tr"
+  },
+  {
+    "topic": "firat_geba",
+    "sub": "geba",
+    "name": "Genç Bakış Topluluğu",
+    "url": "https://geba.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fubet",
+    "sub": "fubet",
+    "name": "Bilişim ve Eğitim Öğrenci Topluluğu",
+    "url": "https://fubet.firat.edu.tr"
+  },
+  {
+    "topic": "firat_chembridgeresearchgroup",
+    "sub": "chembridgeresearchgroup",
+    "name": "ChemBridge Araştırma Grubu",
+    "url": "https://chembridgeresearchgroup.firat.edu.tr"
+  },
+  {
+    "topic": "firat_donersermaye",
+    "sub": "donersermaye",
+    "name": "FIRAT ÜNİVERSİTESİ DÖNER SERMAYE İŞLETME MÜDÜRLÜĞÜ",
+    "url": "https://donersermaye.firat.edu.tr"
+  },
+  {
+    "topic": "firat_harputklasikhadismeclisi",
+    "sub": "harputklasikhadismeclisi",
+    "name": "Harput Klasik Hadis Meclisi",
+    "url": "https://harputklasikhadismeclisi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_teknofestfirat",
+    "sub": "teknofestfirat",
+    "name": "Teknofest Öğrenci Topluluğu",
+    "url": "https://teknofestfirat.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yedikita",
+    "sub": "yedikita",
+    "name": "Yedi Kıta Öğrenci Topluluğu",
+    "url": "https://yedikita.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bdo",
+    "sub": "bdo",
+    "name": "Bir Dünya Oyuncak Öğrenci Topluluğu",
+    "url": "https://bdo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_matek",
+    "sub": "matek",
+    "name": "Matematik ve Teknoloji Öğrenci Topluluğu",
+    "url": "https://matek.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mikromuh",
+    "sub": "mikromuh",
+    "name": "Mikro Mühendisler Öğrenci Topluluğu",
+    "url": "https://mikromuh.firat.edu.tr"
+  },
+  {
+    "topic": "firat_vebist",
+    "sub": "vebist",
+    "name": "Veri Bilimi ve İstatistik Öğrenci Topluluğu",
+    "url": "https://vebist.firat.edu.tr"
+  },
+  {
+    "topic": "firat_adt",
+    "sub": "adt",
+    "name": "Analitik Düşünce Öğrenci Topluluğu",
+    "url": "https://adt.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bilkim",
+    "sub": "bilkim",
+    "name": "Bilim ve Kimya Öğrenci Topluluğu",
+    "url": "https://bilkim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_damla",
+    "sub": "damla",
+    "name": "Damla Öğrenci Topluluğu",
+    "url": "https://damla.firat.edu.tr"
+  },
+  {
+    "topic": "firat_anatomimuzesi",
+    "sub": "anatomimuzesi",
+    "name": "Anatomi Müzesi Geliştirme Topluluğu",
+    "url": "https://anatomimuzesi.firat.edu.tr"
+  },
+  {
+    "topic": "firat_dusunceakd",
+    "sub": "dusunceakd",
+    "name": "Düşünce Akademisi Öğrenci Topluluğu",
+    "url": "https://dusunceakd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gastronomiot",
+    "sub": "gastronomiot",
+    "name": "Gastronomi Topluluğu",
+    "url": "https://gastronomiot.firat.edu.tr"
+  },
+  {
+    "topic": "firat_sbgot",
+    "sub": "sbgot",
+    "name": "Spor Bilimleri Gönüllüleri Öğrenci Topluluğu",
+    "url": "https://sbgot.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bbvot",
+    "sub": "bbvot",
+    "name": "Bulut Bilişim ve Büyük Veri Öğrenci Topluluğu",
+    "url": "https://bbvot.firat.edu.tr"
+  },
+  {
+    "topic": "firat_nefha",
+    "sub": "nefha",
+    "name": "NEFHA Öğrenci Topluluğu",
+    "url": "https://nefha.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ebelikot",
+    "sub": "ebelikot",
+    "name": "Ebelik Öğrenci Topluluğu",
+    "url": "https://ebelikot.firat.edu.tr"
+  },
+  {
+    "topic": "firat_duslerdenguluslere",
+    "sub": "duslerdenguluslere",
+    "name": "Düşlerden Gülüşlere Öğrenci Topluluğu",
+    "url": "https://duslerdenguluslere.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fotografcilikot",
+    "sub": "fotografcilikot",
+    "name": "Fotoğrafçılık Öğrenci Topluluğu",
+    "url": "https://fotografcilikot.firat.edu.tr"
+  },
+  {
+    "topic": "firat_hemsirelikot",
+    "sub": "hemsirelikot",
+    "name": "Hemşirelik Öğrenci Topluluğu",
+    "url": "https://hemsirelikot.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ogrencitopluluklari",
+    "sub": "ogrencitopluluklari",
+    "name": "FIRAT ÜNİVERSİTESİ ÖĞRENCİ TOPLULUKLARI",
+    "url": "https://ogrencitopluluklari.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bdk",
+    "sub": "bdk",
+    "name": "Bilimsel Dergi Koordinatörlüğü",
+    "url": "https://bdk.firat.edu.tr"
+  },
+  {
+    "topic": "firat_noro",
+    "sub": "noro",
+    "name": "NÖRO PAZARLAMA VE PAZARLAMA ARAŞTIRMA MERKEZİ",
+    "url": "https://noro.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ozelkalem",
+    "sub": "ozelkalem",
+    "name": "Özel Kalem Müdürlüğü",
+    "url": "https://ozelkalem.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gia",
+    "sub": "gia",
+    "name": "Görsel İletişim Atölyesi Öğrenci Topluluğu",
+    "url": "https://gia.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bdkl",
+    "sub": "bdkl",
+    "name": "Bitki Doku Kültürü Laboratuvarı",
+    "url": "https://bdkl.firat.edu.tr"
+  },
+  {
+    "topic": "firat_orhun",
+    "sub": "orhun",
+    "name": "Orhun Değişim Programı",
+    "url": "https://orhun.firat.edu.tr"
+  },
+  {
+    "topic": "firat_aysis1001",
+    "sub": "aysis1001",
+    "name": "Afet Bölgesinde Yer Alan Okullarda Gerçekleştirilecek Algı Yönetim Uygulamaları ile Öğretmenlerin Duygusal Bağlılık Düzeyleri Arasındaki İlişkinin İncelenmesi",
+    "url": "https://aysis1001.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ickontrol",
+    "sub": "ickontrol",
+    "name": "İç Kontrol",
+    "url": "https://ickontrol.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fuisg",
+    "sub": "fuisg",
+    "name": "İş Sağlığı ve Güvenliği Koordinatörlüğü",
+    "url": "https://fuisg.firat.edu.tr"
+  },
+  {
+    "topic": "firat_merkezilab",
+    "sub": "merkezilab",
+    "name": "MERLAB",
+    "url": "https://merkezilab.firat.edu.tr"
+  },
+  {
+    "topic": "firat_oteabd",
+    "sub": "oteabd",
+    "name": "Öğretim Teknolojileri Anabilim Dalı",
+    "url": "https://oteabd.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ssdkoord",
+    "sub": "ssdkoord",
+    "name": "Sosyal Seçmeli Dersler Koordinatörlüğü",
+    "url": "https://ssdkoord.firat.edu.tr"
+  },
+  {
+    "topic": "firat_toplumsalkatki",
+    "sub": "toplumsalkatki",
+    "name": "Toplumsal Katkı Koordinatörlüğü",
+    "url": "https://toplumsalkatki.firat.edu.tr"
+  },
+  {
+    "topic": "firat_festival",
+    "sub": "festival",
+    "name": "Fırat Kısa Film Festivali",
+    "url": "https://festival.firat.edu.tr"
+  },
+  {
+    "topic": "firat_erasmus",
+    "sub": "erasmus",
+    "name": "Erasmus+ Kurum Koordinatörlüğü",
+    "url": "https://erasmus.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ansshmyo",
+    "sub": "ansshmyo",
+    "name": "Anestezi Programı",
+    "url": "https://ansshmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fztshmyo",
+    "sub": "fztshmyo",
+    "name": "Fizyoterapi Programı",
+    "url": "https://fztshmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_odmshmyo",
+    "sub": "odmshmyo",
+    "name": "Odyometri Programı",
+    "url": "https://odmshmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_otpshmyo",
+    "sub": "otpshmyo",
+    "name": "Otopsi Yardımcılığı Programı",
+    "url": "https://otpshmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tdsshmyo",
+    "sub": "tdsshmyo",
+    "name": "Tıbbi Dokümantasyon ve Sekreterlik Programı",
+    "url": "https://tdsshmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tgtshmyo",
+    "sub": "tgtshmyo",
+    "name": "Tıbbi Görüntüleme Teknikleri Programı",
+    "url": "https://tgtshmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_tltshmyo",
+    "sub": "tltshmyo",
+    "name": "Tıbbi Laboratuvar Teknikleri Programı",
+    "url": "https://tltshmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_yazbil",
+    "sub": "yazbil",
+    "name": "Yazılım ve Bilişim Araştırma Enstitüsü",
+    "url": "https://yazbil.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fucsuam",
+    "sub": "fucsuam",
+    "name": "Çevre Sorunları Uygulama ve Araştırma Merkez Müdürlüğü",
+    "url": "https://fucsuam.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bilimiletisim",
+    "sub": "bilimiletisim",
+    "name": "Fırat Üniversitesi Bilim İletişimi Koordinatörlüğü",
+    "url": "https://bilimiletisim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fbe",
+    "sub": "fbe",
+    "name": "Fen Bilimleri Enstitüsü",
+    "url": "https://fbe.firat.edu.tr"
+  },
+  {
+    "topic": "firat_surdurulebilirlik",
+    "sub": "surdurulebilirlik",
+    "name": "Sürdürülebilirlik",
+    "url": "https://surdurulebilirlik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bilgisayarkrcmyo",
+    "sub": "bilgisayarkrcmyo",
+    "name": "Bilgisayar Teknolojileri Bölümü",
+    "url": "https://bilgisayarkrcmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_cocukkrcmyo",
+    "sub": "cocukkrcmyo",
+    "name": "Çocuk Bakımı ve Gençlik Hizmetleri Bölümü",
+    "url": "https://cocukkrcmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_gidakrcmyo",
+    "sub": "gidakrcmyo",
+    "name": "Gıda İşleme Bölümü",
+    "url": "https://gidakrcmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_mimarlikkrcmyo",
+    "sub": "mimarlikkrcmyo",
+    "name": "Mimarlık ve Şehir Planlama Bölümü",
+    "url": "https://mimarlikkrcmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_insaatkrcmyo",
+    "sub": "insaatkrcmyo",
+    "name": "İnşaat Bölümü",
+    "url": "https://insaatkrcmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_future",
+    "sub": "future",
+    "name": "FUTURE",
+    "url": "https://future.firat.edu.tr"
+  },
+  {
+    "topic": "firat_firatmttb",
+    "sub": "firatmttb",
+    "name": "Milli Türk Talebe Birliği Öğrenci Topluluğu",
+    "url": "https://firatmttb.firat.edu.tr"
+  },
+  {
+    "topic": "firat_adlibilisimtoplulugu",
+    "sub": "adlibilisimtoplulugu",
+    "name": "Adli Bilişim Topluluğu",
+    "url": "https://adlibilisimtoplulugu.firat.edu.tr"
+  },
+  {
+    "topic": "firat_bilimvefen",
+    "sub": "bilimvefen",
+    "name": "Bilim ve fen topluluğu",
+    "url": "https://bilimvefen.firat.edu.tr"
+  },
+  {
+    "topic": "firat_millikardeslik",
+    "sub": "millikardeslik",
+    "name": "Milli Kardeşlik Topluluğu",
+    "url": "https://millikardeslik.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fuga",
+    "sub": "fuga",
+    "name": "Fırat Üniversitesi Gastronomi Topluluğu",
+    "url": "https://fuga.firat.edu.tr"
+  },
+  {
+    "topic": "firat_vetakort",
+    "sub": "vetakort",
+    "name": "Vetakort",
+    "url": "https://vetakort.firat.edu.tr"
+  },
+  {
+    "topic": "firat_neseliadimlar",
+    "sub": "neseliadimlar",
+    "name": "Neşeli Adımlar Topluluğu",
+    "url": "https://neseliadimlar.firat.edu.tr"
+  },
+  {
+    "topic": "firat_firatunivet",
+    "sub": "firatunivet",
+    "name": "Firatunivet öğrenci topluluğu",
+    "url": "https://firatunivet.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fub3v",
+    "sub": "fub3v",
+    "name": "Fırat Üniversitesi Bulut Bilişim ve Büyük Veri (FUB3V)",
+    "url": "https://fub3v.firat.edu.tr"
+  },
+  {
+    "topic": "firat_munazara",
+    "sub": "munazara",
+    "name": "Fırat Üniversitesi Münazara Topluluğu",
+    "url": "https://munazara.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fuis",
+    "sub": "fuis",
+    "name": "Uluslararası Öğrenci Topluluğu",
+    "url": "https://fuis.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fufizbit",
+    "sub": "fufizbit",
+    "name": "Fizik ve Bilim Topluluğu",
+    "url": "https://fufizbit.firat.edu.tr"
+  },
+  {
+    "topic": "firat_biyobilim",
+    "sub": "biyobilim",
+    "name": "Biyobilim topluluğu",
+    "url": "https://biyobilim.firat.edu.tr"
+  },
+  {
+    "topic": "firat_edebiyatogrencitoplulugu",
+    "sub": "edebiyatogrencitoplulugu",
+    "name": "Fırat Edebiyat Topluluğu",
+    "url": "https://edebiyatogrencitoplulugu.firat.edu.tr"
+  },
+  {
+    "topic": "firat_disticaret",
+    "sub": "disticaret",
+    "name": "Dış Ticaret Bölümü",
+    "url": "https://disticaret.firat.edu.tr"
+  },
+  {
+    "topic": "firat_dergiler",
+    "sub": "dergiler",
+    "name": "Bilimsel Dergiler Koordinatörlüğü",
+    "url": "https://dergiler.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fujsiri",
+    "sub": "fujsiri",
+    "name": "Fırat University Journal of Software and Informatics Research Institute",
+    "url": "https://fujsiri.firat.edu.tr"
+  },
+  {
+    "topic": "firat_farmagenc",
+    "sub": "farmagenc",
+    "name": "FARMAGENÇ ÖĞRENCİ TOPLULUĞU",
+    "url": "https://farmagenc.firat.edu.tr"
+  },
+  {
+    "topic": "firat_fujihes",
+    "sub": "fujihes",
+    "name": "FUJİHES",
+    "url": "https://fujihes.firat.edu.tr"
+  },
+  {
+    "topic": "firat_cglshmyo",
+    "sub": "cglshmyo",
+    "name": "Çocuk Gelişimi Programı",
+    "url": "https://cglshmyo.firat.edu.tr"
+  },
+  {
+    "topic": "firat_turizmotel",
+    "sub": "turizmotel",
+    "name": "Otel, Lokanta ve İkram Hizmetleri Bölümü",
+    "url": "https://turizmotel.firat.edu.tr"
+  },
+  {
+    "topic": "firat_ascilik",
+    "sub": "ascilik",
+    "name": "Aşçılık Programı",
+    "url": "https://ascilik.firat.edu.tr"
+  }
+]

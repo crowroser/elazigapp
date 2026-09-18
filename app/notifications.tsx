@@ -399,6 +399,20 @@ export default function NotificationsScreen() {
         {/* F7: Üniversite & OBS Bildirimleri */}
         <SectionTitle title="Fırat Üniversitesi & OBS" style={styles.section} />
 
+        {/* Birim Duyuru Bildirimleri (uzaktan / anlık push) */}
+        <Card style={{ gap: 12 }} onPress={() => router.push('/firat-units' as any)}>
+          <View style={styles.row}>
+            <IconCircle name="bullhorn-outline" color={C.uniRed} bg={C.uniRedSoft} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>Birim Duyuru Bildirimleri</Text>
+              <Text style={styles.sub}>
+                Seçtiğin fakülte, bölüm veya birimlerin yeni duyuruları anlık bildirim olarak gelsin
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={C.textMuted} />
+          </View>
+        </Card>
+
         {/* Ders Bildirimi */}
         <Card style={{ gap: 12 }}>
           <View style={styles.row}>
